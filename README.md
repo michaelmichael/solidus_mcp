@@ -194,6 +194,48 @@ audits share a database transaction. Tokens and secrets are not shown in the UI.
 Policies retain the application's UID and actor/user IDs so deleting an OAuth
 registration does not delete its permission-change history.
 
+## OAuth scopes and reconnecting
+
+Connection permissions and OAuth scopes are separate requirements. A checked
+permission never expands an existing access or refresh token. If a tool is
+missing, inspect its required scopes and the connection's warnings under
+**AI connections**. The page diagnoses each active token separately: two tokens
+with complementary scopes cannot be combined to authorize one operation.
+Expired and revoked tokens do not count. With mixed active tokens, the page
+warns that the client may still be using a token without the required access.
+
+A scope increase needs a new authorization request and explicit user consent.
+The request must start in the MCP client so its state, redirect URI and PKCE
+verifier remain valid. Do not construct a fresh authorization URL from the
+admin screen or silently broaden the OAuth defaults.
+
+Host integration checklist:
+
+1. Advertise supported scopes through OAuth discovery and validate client scope
+   limits, resource audience, redirect URI and S256 PKCE.
+2. Let the client request scopes, or offer an optional scope chooser on the
+   host's consent page. Keep extra scopes unchecked initially, restrict choices
+   to the client's registration and server configuration, and show a fresh
+   consent summary before issuing a code. Preserve the original client state,
+   callback, resource and PKCE challenge through this review step.
+3. Explain the actual reconnect flow in the admin screen:
+
+   ```ruby
+   SolidusMcp.reconnect_instructions =
+     "Reconnect in your MCP client. On the store consent page, choose additional access, review it, then authorize."
+   ```
+
+   This setting is plain text, escaped when rendered; it does not launch OAuth
+   or change grants. The gem does not own the host's authorization controller.
+4. After reconnection, refresh the client's tool list and grant the corresponding
+   store permissions if they are not already enabled. If the client registration
+   excludes a scope, explicitly update or re-register that client first.
+
+For clients without a scope setting, the host consent chooser provides the
+normal user-facing path. If neither exists, the host/client integration needs
+configuration or an update; users should not have to edit authorization URLs.
+Refreshing a token preserves its existing scope ceiling and cannot fix this.
+
 ## First-release boundaries
 
 This version provides resource/operation controls for explicitly registered

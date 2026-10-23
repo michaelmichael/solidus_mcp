@@ -7,6 +7,7 @@ require "solidus_mcp/version"
 require "solidus_mcp/tool"
 require "solidus_mcp/registry"
 require "solidus_mcp/policy"
+require "solidus_mcp/connection_scopes"
 require "solidus_mcp/server"
 require "solidus_mcp/engine"
 
@@ -17,7 +18,7 @@ module SolidusMcp
     attr_writer :registry
     # An explicit compatibility allowlist, never derived from registry contents.
     # New installations default to no grants. A host may opt in existing tools.
-    attr_accessor :default_permissions
+    attr_accessor :default_permissions, :reconnect_instructions
 
     def registry
       @registry ||= Registry.new
