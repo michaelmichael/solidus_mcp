@@ -10,7 +10,7 @@
         <% next unless application && user %>
         <% policy = @policies[[application.id, user.id]] %>
         <tr>
-          <td class="p-3 border-b"><%= application.name %></td>
+          <td class="p-3 border-b"><%= application.name %> <span class="text-gray-500">#<%= application.id %></span></td>
           <td class="p-3 border-b"><%= user.email %></td>
           <td class="p-3 border-b"><%= policy ? (policy.enabled? ? "Custom permissions" : "Disabled") : "Default permissions" %></td>
           <td class="p-3 border-b"><%= link_to "Edit permissions", solidus_admin.edit_mcp_connection_path(application, user_id: user.id), class: "underline" %></td>

@@ -68,11 +68,21 @@
     </table>
   </details>
 
+  <section class="mt-8" aria-labelledby="delete-connection-heading">
+    <h2 id="delete-connection-heading" class="text-lg font-semibold mb-3">Delete connection</h2>
+    <p class="mb-3">Revoke this person's access and refresh tokens and pending authorization codes for this application, and clear its permissions. Audit history is retained. Other people using the application are unaffected. Reconnecting requires authorization and enabling permissions again.</p>
+    <%= button_to "Delete connection", solidus_admin.mcp_connection_path(@application, user_id: @user.id),
+      method: :delete, params: {lock_version: @policy.persisted? ? @policy.lock_version : -1},
+      form: {data: {turbo_confirm: "Delete this connection and revoke its access?"}},
+      class: "underline text-red-700" %>
+  </section>
+
   <h2 class="text-lg font-semibold mt-8 mb-3">Recent permission changes</h2>
   <% if @changes.empty? %><p>No permission changes recorded.</p><% end %>
   <% @changes.each do |change| %>
     <details class="mb-3">
       <summary><%= change.created_at.iso8601 %> — administrator #<%= change.actor_id %></summary>
+      <% if change.new_values["disconnected"] %><p>Connection deleted; credentials revoked.</p><% end %>
       <p>Enabled: <%= change.previous_values["enabled"] %> → <%= change.new_values["enabled"] %></p>
       <p>Removed: <%= (change.previous_values["permissions"] - change.new_values["permissions"]).join(", ").presence || "None" %></p>
       <p>Added: <%= (change.new_values["permissions"] - change.previous_values["permissions"]).join(", ").presence || "None" %></p>

@@ -32,6 +32,22 @@ module SolidusMcp
       end
     end
 
+    # A connection belongs to an application/user pair. Retain revoked tokens
+    # and the disabled policy for host audits; never delete a shared OAuth app.
+    def disconnect!(actor:, lock_version:)
+      transaction do
+        change!(actor: actor, permissions: [], enabled: false, lock_version: lock_version)
+        now = Time.current
+        Doorkeeper::AccessToken.where(application_id: application_id, resource_owner_id: user_id, revoked_at: nil)
+          .update_all(revoked_at: now)
+        Doorkeeper::AccessGrant.where(application_id: application_id, resource_owner_id: user_id, revoked_at: nil)
+          .update_all(revoked_at: now)
+        state = attributes.slice("permissions", "enabled")
+        policy_changes.create!(actor_id: actor.id, previous_values: state,
+          new_values: state.merge("disconnected" => true))
+      end
+    end
+
     private
 
     def retain_application_uid
