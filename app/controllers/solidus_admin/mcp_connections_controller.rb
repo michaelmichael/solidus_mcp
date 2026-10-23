@@ -30,8 +30,15 @@ module SolidusAdmin
       @policy.change!(actor: current_solidus_admin_user,
         permissions: submitted.fetch(:permissions, []).reject(&:blank?),
         enabled: submitted[:enabled] == "1", lock_version: version.to_i)
-      redirect_to solidus_admin.edit_mcp_connection_path(@application, user_id: @user.id),
-        notice: "Connection permissions saved. They apply to the next request.", status: :see_other
+      needs_reconnect = @registry.tools.values.any? do |tool|
+        (tool.permissions - @policy.permissions).empty? && @scope_status.warning(tool)
+      end
+      notice = if @policy.enabled? && needs_reconnect
+        "Connection permissions saved. OAuth access is still missing for some tools; follow the reconnect instructions below."
+      else
+        "Connection permissions saved. They apply to the next request, within the token's OAuth scopes."
+      end
+      redirect_to solidus_admin.edit_mcp_connection_path(@application, user_id: @user.id), notice: notice, status: :see_other
     rescue ActiveRecord::StaleObjectError, ActiveRecord::RecordNotUnique
       @policy.reload if @policy.persisted?
       flash.now[:error] = "Another administrator changed this connection. Reload the page before saving again."
@@ -56,8 +63,9 @@ module SolidusAdmin
       @user = Spree.user_class.find(params.require(:user_id))
       tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: @user.id)
       raise ActiveRecord::RecordNotFound unless tokens.exists?
-      @scopes = tokens.where(revoked_at: nil).where("expires_in IS NULL OR created_at + expires_in * interval '1 second' > ?", Time.current)
-        .pluck(:scopes).flat_map { |scopes| scopes.to_s.split }.uniq.sort
+      scope_sets = tokens.where(revoked_at: nil).where("expires_in IS NULL OR created_at + expires_in * interval '1 second' > ?", Time.current).pluck(:scopes)
+      @scopes = scope_sets.flat_map { |scopes| scopes.to_s.split }.uniq.sort
+      @scope_status = SolidusMcp::ConnectionScopes.new(scope_sets)
       @policy = SolidusMcp::ConnectionPolicy.find_or_initialize_by(application: @application, user: @user)
       @policy.permissions = SolidusMcp.default_permissions if @policy.new_record?
       @registry = SolidusMcp.registry

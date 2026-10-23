@@ -50,6 +50,46 @@ RSpec.describe "MCP connection management", type: :request do
     expect(response.body).not_to include(token.token, token.plaintext_token)
   end
 
+  it "shows missing scopes beside permissions without expanding tokens when saved" do
+    token.update!(scopes: "catalog:read")
+    @request_user = admin
+    get edit_path, headers: request_headers
+    expect(response.body).to include("Requires reconnection with products:write", "Reconnect to authorize additional access")
+    save_policy(permissions: ["entries.publish"])
+    expect(response).to have_http_status(:see_other)
+    expect(flash[:notice]).to include("OAuth access is still missing")
+    expect(token.reload.scopes.to_a).to eq(["catalog:read"])
+    expect(Doorkeeper::AccessToken.count).to eq(1)
+  end
+
+  it "warns about mixed tokens instead of implying every client has the union of scopes" do
+    token.update!(scopes: "catalog:read")
+    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "products:write", expires_in: 3600)
+    @request_user = admin
+    get edit_path, headers: request_headers
+    expect(response.body).to include("Some active tokens lack products:write")
+    expect(response.body).to include("Some active tokens lack catalog:read")
+  end
+
+  it "ignores expired and revoked tokens when explaining missing scopes" do
+    token.update!(scopes: "catalog:read")
+    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "products:write", expires_in: 3600, created_at: 2.hours.ago)
+    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "products:write", expires_in: 3600, revoked_at: Time.current)
+    @request_user = admin
+    get edit_path, headers: request_headers
+    expect(response.body).to include("Requires reconnection with products:write")
+    expect(response.body).not_to include("Some active tokens lack")
+  end
+
+  it "explains expired connections and renders host instructions as text" do
+    token.revoke
+    SolidusMcp.reconnect_instructions = "Use Review access. <script>unsafe</script>"
+    @request_user = admin
+    get edit_path, headers: request_headers
+    expect(response.body).to include("No active access token", "Use Review access.", "&lt;script&gt;")
+    expect(response.body).not_to include("<script>unsafe")
+  end
+
   it "respects Solidus restrictions on managing connections" do
     ability = Spree::Ability.new(admin)
     ability.cannot :manage, :mcp_connections
