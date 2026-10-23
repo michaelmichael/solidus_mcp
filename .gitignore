@@ -1,0 +1,9 @@
+/.bundle/
+/Gemfile.lock
+/vendor/bundle/
+/tmp/
+/coverage/
+/*.gem
+/spec/dummy/log/
+/spec/dummy/tmp/
+/spec/dummy/db/schema.rb

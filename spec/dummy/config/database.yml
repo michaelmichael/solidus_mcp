@@ -1,0 +1,4 @@
+test:
+  adapter: postgresql
+  encoding: unicode
+  url: <%= ENV.fetch("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/solidus_mcp_test") %>

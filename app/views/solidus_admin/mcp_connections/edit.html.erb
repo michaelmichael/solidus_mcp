@@ -1,0 +1,62 @@
+<div class="p-6">
+  <%= link_to "All AI connections", solidus_admin.mcp_connections_path, class: "underline" %>
+  <h1 class="text-2xl font-semibold mt-4 mb-2"><%= @application.name %></h1>
+  <p class="mb-2">Connected by <strong><%= @user.email %></strong></p>
+  <p class="mb-4">Changes apply to this person's connection, including refreshed tokens. An unchecked permission blocks every tool that needs it.</p>
+  <p class="mb-6">Current token scopes: <%= @scopes.presence&.join(", ") || "No unexpired access tokens. Reconnect or refresh to use this connection." %>. Enabling a permission here does not add scopes to an existing token.</p>
+
+  <%= form_with url: solidus_admin.mcp_connection_path(@application, user_id: @user.id), method: :patch, local: true do %>
+    <%= hidden_field_tag "connection_policy[lock_version]", @policy.persisted? ? @policy.lock_version : -1 %>
+    <%= hidden_field_tag "connection_policy[enabled]", "0", id: nil %>
+    <label class="flex gap-2 mb-6">
+      <%= check_box_tag "connection_policy[enabled]", "1", @policy.enabled? %>
+      Connection enabled
+    </label>
+    <%= hidden_field_tag "connection_policy[permissions][]", "", id: nil %>
+    <table class="w-full text-left border-collapse">
+      <thead><tr><th class="p-3 border-b">Resource</th><th class="p-3 border-b">Allowed operations</th></tr></thead>
+      <tbody>
+        <% @registry.resources.each_value do |resource| %>
+          <tr>
+            <th scope="row" class="p-3 border-b align-top"><%= resource.label %></th>
+            <td class="p-3 border-b">
+              <div class="flex flex-wrap gap-4">
+                <% resource.permissions.each do |permission| %>
+                  <label class="flex items-center gap-2">
+                    <%= check_box_tag "connection_policy[permissions][]", permission.key, @policy.permissions.include?(permission.key), id: "permission_#{permission.key.tr('.', '_')}" %>
+                    <%= permission.action.humanize %>
+                  </label>
+                <% end %>
+              </div>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <%= submit_tag "Save permissions", class: "mt-6 px-4 py-2 rounded bg-black text-white cursor-pointer" %>
+  <% end %>
+
+  <details class="mt-8">
+    <summary class="cursor-pointer font-semibold">▸ Tool requirements</summary>
+    <p class="my-3">Tools that touch several resources require every permission listed. Only registered operations are available.</p>
+    <table class="w-full text-left">
+      <thead><tr><th class="p-2">Tool</th><th class="p-2">Required permissions</th><th class="p-2">Required OAuth scopes</th></tr></thead>
+      <tbody>
+        <% @registry.tools.each_value do |tool| %>
+          <tr><td class="p-2"><%= tool.name %></td><td class="p-2"><%= tool.permissions.join(", ") %></td><td class="p-2"><%= tool.scopes.join(", ") %></td></tr>
+        <% end %>
+      </tbody>
+    </table>
+  </details>
+
+  <h2 class="text-lg font-semibold mt-8 mb-3">Recent permission changes</h2>
+  <% if @changes.empty? %><p>No permission changes recorded.</p><% end %>
+  <% @changes.each do |change| %>
+    <details class="mb-3">
+      <summary><%= change.created_at.iso8601 %> — administrator #<%= change.actor_id %></summary>
+      <p>Enabled: <%= change.previous_values["enabled"] %> → <%= change.new_values["enabled"] %></p>
+      <p>Removed: <%= (change.previous_values["permissions"] - change.new_values["permissions"]).join(", ").presence || "None" %></p>
+      <p>Added: <%= (change.new_values["permissions"] - change.previous_values["permissions"]).join(", ").presence || "None" %></p>
+    </details>
+  <% end %>
+</div>

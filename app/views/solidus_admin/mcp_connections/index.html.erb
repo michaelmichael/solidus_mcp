@@ -1,0 +1,26 @@
+<div class="p-6">
+  <h1 class="text-2xl font-semibold mb-2">AI connections</h1>
+  <p class="mb-6">Choose what each assistant can do for the person who connected it. Permissions also remain limited by that person's store access and OAuth consent.</p>
+
+  <table class="w-full text-left border-collapse">
+    <thead><tr><th class="p-3 border-b">Application</th><th class="p-3 border-b">Connected by</th><th class="p-3 border-b">Permissions</th><th class="p-3 border-b">Manage</th></tr></thead>
+    <tbody>
+      <% @connections.each do |connection| %>
+        <% application = @applications[connection.application_id]; user = @users[connection.resource_owner_id] %>
+        <% next unless application && user %>
+        <% policy = @policies[[application.id, user.id]] %>
+        <tr>
+          <td class="p-3 border-b"><%= application.name %></td>
+          <td class="p-3 border-b"><%= user.email %></td>
+          <td class="p-3 border-b"><%= policy ? (policy.enabled? ? "Custom permissions" : "Disabled") : "Default permissions" %></td>
+          <td class="p-3 border-b"><%= link_to "Edit permissions", solidus_admin.edit_mcp_connection_path(application, user_id: user.id), class: "underline" %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+  <% if @connections.empty? %><p class="mt-4">No assistants have connected yet. Connect an MCP client and complete OAuth authorization to see it here.</p><% end %>
+  <nav class="flex gap-4 mt-4" aria-label="Connections pages">
+    <% if @page > 1 %><%= link_to "Previous", solidus_admin.mcp_connections_path(page: @page - 1) %><% end %>
+    <% if @more %><%= link_to "Next", solidus_admin.mcp_connections_path(page: @page + 1) %><% end %>
+  </nav>
+</div>
