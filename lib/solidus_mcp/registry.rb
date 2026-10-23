@@ -7,7 +7,7 @@ module SolidusMcp
     Permission = Struct.new(:key, :resource, :action, :model_name, :ability_action, keyword_init: true)
     Resource = Struct.new(:key, :label, :model_name, :permissions, keyword_init: true)
     Tool = Struct.new(:name, :resource, :permissions, :scopes, :description, :input_schema,
-      :read_only, :handler_name, keyword_init: true)
+      :read_only, :handler_name, :handler_method, keyword_init: true)
 
     attr_reader :resources, :permissions, :tools
 
@@ -33,7 +33,18 @@ module SolidusMcp
       resources[key] = Resource.new(key: key, label: label.to_s.dup.freeze, model_name: model, permissions: entries.freeze).freeze
     end
 
-    def tool(name, resource:, permissions:, definition:, handler:)
+    def register(tool_class)
+      unless tool_class.is_a?(Class) && tool_class < SolidusMcp::Tool && tool_class.name.present?
+        raise ArgumentError, "Expected a named SolidusMcp::Tool subclass"
+      end
+      unless tool_class.public_instance_methods.include?(:call)
+        raise ArgumentError, "Tool must implement a public call method"
+      end
+      attributes = tool_class.registration
+      tool(attributes.fetch(:name), **attributes.except(:name))
+    end
+
+    def tool(name, resource:, permissions:, definition:, handler:, handler_method: name)
       name = identifier!(name)
       raise ArgumentError, "Reserved tool name: #{name}" if %w[list_capabilities describe_resource].include?(name)
       raise ArgumentError, "Duplicate tool: #{name}" if tools.key?(name)
@@ -51,7 +62,7 @@ module SolidusMcp
         description: definition.fetch(:description).dup.freeze,
         input_schema: deep_freeze(type: "object", properties: definition.fetch(:properties).deep_dup,
           required: definition.fetch(:required).dup, additionalProperties: false),
-        read_only: definition.fetch(:read_only), handler_name: handler.dup.freeze).freeze
+        read_only: definition.fetch(:read_only), handler_name: handler.dup.freeze, handler_method: identifier!(handler_method)).freeze
     end
 
     def seal!

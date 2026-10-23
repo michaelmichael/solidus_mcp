@@ -2,6 +2,11 @@
 
 ## 0.1.0 — unreleased
 
+- Optional `SolidusMcp::Tool` classes with co-located declarations and handlers,
+  registered with `Registry#register`; legacy handler registration is unchanged.
+- Policy-protected SDK tools exposed through `Server.tools` for incremental host
+  migrations, with class-name resolution compatible with Rails reloading.
+
 - Explicit resource, permission and MCP tool registry.
 - Per-application/user grants, OAuth scope and Solidus ability checks.
 - Permission-aware discovery and execution using the Ruby MCP SDK.
