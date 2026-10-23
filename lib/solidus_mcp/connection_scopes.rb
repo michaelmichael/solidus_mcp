@@ -5,7 +5,7 @@ module SolidusMcp
   # A single token must contain all scopes; combining different tokens is invalid.
   class ConnectionScopes
     def initialize(scope_sets)
-      @scope_sets = scope_sets.map { |scopes| scopes.to_s.split.uniq }
+      @scope_sets = scope_sets.map { |scopes| OauthScopes.expand(scopes.to_s.split) }
     end
 
     def warning(tool)
