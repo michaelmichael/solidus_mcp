@@ -194,6 +194,17 @@ audits share a database transaction. Tokens and secrets are not shown in the UI.
 Policies retain the application's UID and actor/user IDs so deleting an OAuth
 registration does not delete its permission-change history.
 
+## Delete a connection
+
+Open **AI connections**, choose **Edit permissions**, then **Delete connection**.
+Deletion revokes all access/refresh tokens and pending authorization codes for
+that application/person pair, clears permissions, and disables the policy. The
+connection disappears from the list. Shared OAuth registrations and other
+people's connections are unaffected. Revoked token rows and policy history are
+retained for auditing. A new authorization can reconnect the same client, but
+its permissions stay disabled until an administrator explicitly enables them.
+The list includes application IDs to distinguish repeated client registrations.
+
 ## Broad OAuth consent and tool permissions
 
 For hosts that want tool changes without repeated OAuth consent, use stable

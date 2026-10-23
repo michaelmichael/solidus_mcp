@@ -172,4 +172,99 @@ RSpec.describe "MCP connection management", type: :request do
     expect(policy.reload.application_uid).to eq(uid)
     expect(policy.policy_changes.last.actor_id).to eq(admin.id)
   end
+  describe "deleting a connection" do
+    before { @request_user = admin }
+
+    def delete_form_token
+      get edit_path, headers: request_headers
+      expect(response).to have_http_status(:ok)
+      form = Nokogiri::HTML(response.body).at_css('input[name="_method"][value="delete"]').ancestors("form").first
+      form.at_css('input[name="authenticity_token"]')["value"]
+    end
+
+    def delete_connection(version: "-1", csrf: delete_form_token)
+      delete path, headers: request_headers, params: {authenticity_token: csrf, lock_version: version}
+    end
+
+    it "revokes tokens, refresh tokens and codes only for this application/person pair" do
+      refreshable = Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id,
+        scopes: "catalog:read", expires_in: 3600, use_refresh_token: true)
+      grant = Doorkeeper::AccessGrant.create!(application: application, resource_owner_id: admin.id,
+        expires_in: 600, redirect_uri: application.redirect_uri, scopes: "catalog:read")
+      other_user = create_user
+      other_token = Doorkeeper::AccessToken.create!(application: application, resource_owner_id: other_user.id, expires_in: 3600)
+      other_grant = Doorkeeper::AccessGrant.create!(application: application, resource_owner_id: other_user.id,
+        expires_in: 600, redirect_uri: application.redirect_uri)
+      other_app = Doorkeeper::Application.create!(name: "Other assistant", redirect_uri: application.redirect_uri)
+      unrelated = Doorkeeper::AccessToken.create!(application: other_app, resource_owner_id: admin.id, expires_in: 3600)
+      expect(refreshable.refresh_token).to be_present
+
+      delete_connection
+      expect(response).to have_http_status(:see_other)
+      expect(token.reload).to be_revoked
+      expect(refreshable.reload).to be_revoked
+      expect(grant.reload).to be_revoked
+      expect(other_token.reload).not_to be_revoked
+      expect(other_grant.reload).not_to be_revoked
+      expect(unrelated.reload).not_to be_revoked
+      expect(application.reload).to be_persisted
+      policy = SolidusMcp::ConnectionPolicy.find_by!(application: application, user: admin)
+      expect(policy.permissions).to eq([])
+      expect(policy).not_to be_enabled
+      expect(policy.policy_changes.last.actor_id).to eq(admin.id)
+      expect(policy.policy_changes.last.new_values["disconnected"]).to be(true)
+    end
+
+    it "removes the listing while preserving history and denies automatic grants after reconnecting" do
+      save_policy
+      policy = SolidusMcp::ConnectionPolicy.find_by!(application: application, user: admin)
+      delete_connection(version: policy.lock_version.to_s)
+      expect(response).to have_http_status(:see_other)
+      get "/admin/mcp_connections", headers: request_headers
+      expect(response.body).not_to include("Catalog assistant")
+      expect(policy.policy_changes.count).to eq(3)
+      Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, expires_in: 3600)
+      get "/admin/mcp_connections", headers: request_headers
+      expect(response.body).to include("Catalog assistant", "Disabled")
+      expect(policy.reload.permissions).to eq([])
+    end
+
+    it "requires CSRF protection and administrator permission" do
+      csrf = delete_form_token
+      delete_connection(csrf: "invalid")
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(token.reload).not_to be_revoked
+      ability = Spree::Ability.new(admin)
+      ability.cannot :destroy, :mcp_connections
+      allow(Spree::Ability).to receive(:new).with(admin).and_return(ability)
+      delete_connection(csrf: csrf)
+      expect(response).to have_http_status(:forbidden)
+      expect(token.reload).not_to be_revoked
+    end
+
+    it "rejects a stale deletion form without revoking credentials" do
+      csrf = delete_form_token
+      policy = SolidusMcp::ConnectionPolicy.create!(application: application, user: admin, permissions: ["entries.read"])
+      delete_connection(csrf: csrf)
+      expect(response).to have_http_status(:conflict)
+      expect(token.reload).not_to be_revoked
+      expect(policy.reload.permissions).to eq(["entries.read"])
+    end
+
+    it "rolls back credential revocation if the deletion audit fails" do
+      save_policy
+      policy = SolidusMcp::ConnectionPolicy.find_by!(application: application, user: admin)
+      allow_any_instance_of(SolidusMcp::PolicyChange).to receive(:save!).and_wrap_original do |method, *args, **kwargs|
+        if method.receiver.new_values["disconnected"]
+          raise ActiveRecord::RecordInvalid.new(method.receiver)
+        end
+        method.call(*args, **kwargs)
+      end
+      delete_connection(version: policy.lock_version.to_s)
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(token.reload).not_to be_revoked
+      expect(policy.reload).to be_enabled
+      expect(policy.permissions).to eq(["entries.read"])
+    end
+  end
 end

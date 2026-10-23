@@ -3,11 +3,11 @@
 module SolidusAdmin
   class McpConnectionsController < BaseController
     before_action :require_administrator
-    before_action :load_connection, only: [:edit, :update]
+    before_action :load_connection, only: [:edit, :update, :destroy]
 
     def index
       @page = [params[:page].to_i, 1].max
-      @connections = Doorkeeper::AccessToken.where.not(application_id: nil).where.not(resource_owner_id: nil)
+      @connections = Doorkeeper::AccessToken.where(revoked_at: nil).where.not(application_id: nil).where.not(resource_owner_id: nil)
         .select(:application_id, :resource_owner_id).distinct.order(:application_id, :resource_owner_id)
         .offset((@page - 1) * 25).limit(26).to_a
       @more = @connections.size > 25
@@ -42,6 +42,22 @@ module SolidusAdmin
     rescue ActiveRecord::StaleObjectError, ActiveRecord::RecordNotUnique
       @policy.reload if @policy.persisted?
       flash.now[:error] = "Another administrator changed this connection. Reload the page before saving again."
+      render :edit, status: :conflict
+    rescue ActiveRecord::RecordInvalid => e
+      flash.now[:error] = e.record.errors.full_messages.to_sentence
+      render :edit, status: :unprocessable_entity
+    end
+
+    def destroy
+      version = params[:lock_version]
+      raise ActionController::BadRequest, "Missing policy version" unless version.is_a?(String) && version.match?(/\A(?:-1|[0-9]+)\z/)
+
+      @policy.disconnect!(actor: current_solidus_admin_user, lock_version: version.to_i)
+      redirect_to solidus_admin.mcp_connections_path,
+        notice: "Connection deleted. Its credentials were revoked and permissions cleared. Audit history was retained.", status: :see_other
+    rescue ActiveRecord::StaleObjectError, ActiveRecord::RecordNotUnique
+      @policy.reload if @policy.persisted?
+      flash.now[:error] = "Another administrator changed this connection. Reload the page before deleting it."
       render :edit, status: :conflict
     rescue ActiveRecord::RecordInvalid => e
       flash.now[:error] = e.record.errors.full_messages.to_sentence
