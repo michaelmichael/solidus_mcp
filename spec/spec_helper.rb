@@ -12,9 +12,11 @@ RSpec.configure do |config|
   config.before do
     SolidusMcp.registry = TestCatalog.registry
     SolidusMcp.default_permissions = []
+    SolidusMcp.reconnect_instructions = nil
   end
   config.after do
     SolidusMcp.registry = SolidusMcp::Registry.new
     SolidusMcp.default_permissions = []
+    SolidusMcp.reconnect_instructions = nil
   end
 end

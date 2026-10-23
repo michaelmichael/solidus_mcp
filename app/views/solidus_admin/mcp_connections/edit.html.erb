@@ -3,7 +3,7 @@
   <h1 class="text-2xl font-semibold mt-4 mb-2"><%= @application.name %></h1>
   <p class="mb-2">Connected by <strong><%= @user.email %></strong></p>
   <p class="mb-4">Changes apply to this person's connection, including refreshed tokens. An unchecked permission blocks every tool that needs it.</p>
-  <p class="mb-6">Current token scopes: <%= @scopes.presence&.join(", ") || "No unexpired access tokens. Reconnect or refresh to use this connection." %>. Enabling a permission here does not add scopes to an existing token.</p>
+  <p class="mb-6">Scopes on active tokens (tokens may differ): <%= @scopes.presence&.join(", ") || "No unexpired access tokens. Reconnect or refresh to use this connection." %>. Enabling a permission here does not add scopes to an existing token.</p>
 
   <%= form_with url: solidus_admin.mcp_connection_path(@application, user_id: @user.id), method: :patch, local: true do %>
     <%= hidden_field_tag "connection_policy[lock_version]", @policy.persisted? ? @policy.lock_version : -1 %>
@@ -22,10 +22,18 @@
             <td class="p-3 border-b">
               <div class="flex flex-wrap gap-4">
                 <% resource.permissions.each do |permission| %>
+                  <div>
                   <label class="flex items-center gap-2">
                     <%= check_box_tag "connection_policy[permissions][]", permission.key, @policy.permissions.include?(permission.key), id: "permission_#{permission.key.tr('.', '_')}" %>
                     <%= permission.action.humanize %>
                   </label>
+                  <% @registry.tools.each_value do |tool| %>
+                    <% next unless tool.permissions.include?(permission.key) %>
+                    <% if (warning = @scope_status.warning(tool)) %>
+                      <p class="text-sm mt-1" data-scope-warning="<%= tool.name %>"><strong><%= tool.name %>:</strong> <%= warning %></p>
+                    <% end %>
+                  <% end %>
+                  </div>
                 <% end %>
               </div>
             </td>
@@ -35,6 +43,17 @@
     </table>
     <%= submit_tag "Save permissions", class: "mt-6 px-4 py-2 rounded bg-black text-white cursor-pointer" %>
   <% end %>
+
+  <section class="mt-8" aria-labelledby="reconnect-heading">
+    <h2 id="reconnect-heading" class="text-lg font-semibold">Reconnect to authorize additional access</h2>
+    <p class="my-3">Saving permissions here does not expand OAuth consent. The person who connected this application must start Reconnect or Authorize again in their MCP client, request the required scopes, and approve them on the store's consent screen. Then refresh the client's tool list.</p>
+    <% if SolidusMcp.reconnect_instructions.present? %>
+      <p class="my-3"><%= SolidusMcp.reconnect_instructions %></p>
+    <% else %>
+      <p class="my-3">If the client has no scope setting, use the host's scope chooser on its consent screen, if available. Otherwise contact the store administrator to configure the client's OAuth integration. Editing an authorization URL should not be necessary.</p>
+    <% end %>
+    <p class="my-3">Refreshing an existing token cannot add scopes. An expired token can be refreshed only with the access previously authorized. Reconnecting does not automatically enable any store permissions.</p>
+  </section>
 
   <details class="mt-8">
     <summary class="cursor-pointer font-semibold">▸ Tool requirements</summary>
