@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+bundle install
+bundle exec rake db:create db:migrate
+bundle exec rspec
+bundle exec standardrb
+bundle exec ruby -S gem build solidus_mcp.gemspec

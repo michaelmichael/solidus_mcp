@@ -1,0 +1,59 @@
+name: Solidus MCP
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solidus-mcp-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Ruby 3.2 / Rails 8.0 / Solidus 4.7 (${{ matrix.mode }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [admin, core]
+    env:
+      RAILS_ENV: test
+      WITHOUT_ADMIN: ${{ matrix.mode == 'core' && '1' || '0' }}
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/solidus_mcp_test
+    services:
+      postgres:
+        image: postgres:17-alpine
+        ports: ["5432:5432"]
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          cache-version: ${{ matrix.mode }}
+      - name: Run migrations against a blank database
+        run: bundle exec rake db:create db:migrate
+      - name: Specs
+        run: |
+          if [ "$WITHOUT_ADMIN" = "1" ]; then
+            bundle exec rspec --exclude-pattern 'spec/requests/**/*_spec.rb'
+          else
+            bundle exec rspec
+          fi
+      - name: Ruby style
+        run: bundle exec standardrb
+      - name: Build gem
+        run: gem build solidus_mcp.gemspec
