@@ -65,7 +65,7 @@ Rails.application.config.to_prepare do
     resource: :products,
     permissions: ["products.publish"],
     definition: {
-      scope: "products:write",
+      scope: "mcp:write",
       read_only: false,
       description: "Publish a prepared product.",
       properties: {product_id: {type: "integer", minimum: 1}},
@@ -108,7 +108,7 @@ module MyStore
       tool_name :publish_product
       resource :products
       permissions "products.publish"
-      scope "products:write"
+      scope "mcp:write"
       description "Publish a prepared product."
       read_only false
       input :product_id, type: "integer", minimum: 1, required: true
@@ -194,47 +194,68 @@ audits share a database transaction. Tokens and secrets are not shown in the UI.
 Policies retain the application's UID and actor/user IDs so deleting an OAuth
 registration does not delete its permission-change history.
 
+## Broad OAuth consent and tool permissions
+
+For hosts that want tool changes without repeated OAuth consent, use stable
+`mcp:read` and `mcp:write` scopes and keep individual permissions in the registry.
+New permissions remain disabled until an administrator enables them. Write
+consent must clearly cover write tools enabled later. Read-to-write upgrades
+still require a new authorization request and explicit consent.
+
+The host owns OAuth discovery, registration and consent. Default authorization
+to read-only, allow write only through consent, and validate requested scopes
+against the client's registration. Checking an AI connection permission never
+changes a token's scope ceiling. Refresh the client's tools after permission
+changes; execution rechecks permissions even if a client caches its listing.
+
+For a host migrating existing narrow scopes, configure explicit one-way
+implications and use the same helper in its credential:
+
+```ruby
+SolidusMcp.scope_implications = {
+  "mcp:read" => %w[catalog:read sales:read].freeze,
+  "mcp:write" => %w[mcp:read products:write prices:write inventory:write].freeze
+}.freeze
+
+# In the host credential:
+def permits?(scope)
+  SolidusMcp::OauthScopes.permits?(token.scopes.to_a, scope)
+end
+```
+
+New tool classes can declare `scope "mcp:read"` or `scope "mcp:write"`. Existing
+tool declarations may retain their narrow requirements during migration: broad
+tokens cover them, while legacy tokens keep their original limits. Do not infer
+implications from the registry or map narrow grants back to broad write access.
+Without configuration the helper uses exact scope matching. Empty scopes grant
+nothing. Implications are also used by admin connection warnings, with each
+active token assessed separately; complementary tokens are never combined.
+
+Keep legacy scopes accepted for existing clients and refresh grants. Do not
+silently widen tokens or client registrations. Clients registered with only old
+scopes need an explicit registration update or new registration and one consent
+flow to adopt broad scopes. New registrations also need their own connection
+permissions. Migrating previously unregistered tools into the registry requires
+administrators to grant their new permissions; do not enable them automatically.
+
 ## OAuth scopes and reconnecting
 
-Connection permissions and OAuth scopes are separate requirements. A checked
-permission never expands an existing access or refresh token. If a tool is
-missing, inspect its required scopes and the connection's warnings under
-**AI connections**. The page diagnoses each active token separately: two tokens
-with complementary scopes cannot be combined to authorize one operation.
-Expired and revoked tokens do not count. With mixed active tokens, the page
-warns that the client may still be using a token without the required access.
+A tool still requires both consent and connection permissions. The admin screen
+warns when active tokens lack its required scopes, but cannot initiate the
+client's PKCE authorization flow itself. Configure host-specific instructions:
 
-A scope increase needs a new authorization request and explicit user consent.
-The request must start in the MCP client so its state, redirect URI and PKCE
-verifier remain valid. Do not construct a fresh authorization URL from the
-admin screen or silently broaden the OAuth defaults.
+```ruby
+SolidusMcp.reconnect_instructions =
+  "Reconnect from your client to upgrade from read to write. On the store " \
+  "consent screen, select write access, review the permissions, then Authorize."
+```
 
-Host integration checklist:
-
-1. Advertise supported scopes through OAuth discovery and validate client scope
-   limits, resource audience, redirect URI and S256 PKCE.
-2. Let the client request scopes, or offer an optional scope chooser on the
-   host's consent page. Keep extra scopes unchecked initially, restrict choices
-   to the client's registration and server configuration, and show a fresh
-   consent summary before issuing a code. Preserve the original client state,
-   callback, resource and PKCE challenge through this review step.
-3. Explain the actual reconnect flow in the admin screen:
-
-   ```ruby
-   SolidusMcp.reconnect_instructions =
-     "Reconnect in your MCP client. On the store consent page, choose additional access, review it, then authorize."
-   ```
-
-   This setting is plain text, escaped when rendered; it does not launch OAuth
-   or change grants. The gem does not own the host's authorization controller.
-4. After reconnection, refresh the client's tool list and grant the corresponding
-   store permissions if they are not already enabled. If the client registration
-   excludes a scope, explicitly update or re-register that client first.
-
-For clients without a scope setting, the host consent chooser provides the
-normal user-facing path. If neither exists, the host/client integration needs
-configuration or an update; users should not have to edit authorization URLs.
-Refreshing a token preserves its existing scope ceiling and cannot fix this.
+Hosts can offer a scope chooser on the consent page when clients have no scope
+setting. Keep additional scopes unchecked, restrict choices to the registration,
+preserve state, callback, resource and PKCE challenge, and show the revised
+consent before issuing a code. Do not ask users to edit OAuth URLs. A token
+refresh cannot increase scopes. Mixed active tokens may retain warnings until
+the older tokens expire or are revoked.
 
 ## First-release boundaries
 
