@@ -2,6 +2,10 @@
 
 ## 0.1.0 — unreleased
 
+- Inline OAuth scope warnings in AI connections, including expired and mixed
+  token cases, plus host-configurable reconnect instructions. Saving a store
+  permission never changes token scopes.
+
 - Optional `SolidusMcp::Tool` classes with co-located declarations and handlers,
   registered with `Registry#register`; legacy handler registration is unchanged.
 - Policy-protected SDK tools exposed through `Server.tools` for incremental host
