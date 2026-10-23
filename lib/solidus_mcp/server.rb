@@ -3,6 +3,12 @@
 module SolidusMcp
   class Server
     def self.build(credential:, name:, version:, instructions:, errors: [])
+      MCP::Server.new(name: name, version: version, tools: tools(credential: credential, errors: errors), instructions: instructions)
+    end
+
+    # Allows a host to migrate operations incrementally into the registry.
+    # These SDK tools include the same discovery and execution policy checks.
+    def self.tools(credential:, errors: [])
       registry = SolidusMcp.registry
       policy = Policy.new(credential, registry: registry)
       tools = registry.tools.values.filter_map do |tool|
@@ -13,7 +19,7 @@ module SolidusMcp
                         idempotent_hint: tool.read_only, open_world_hint: false}) do |**arguments|
           arguments.delete(:server_context)
           policy.authorize!(tool)
-          result = tool.handler_name.constantize.new(credential).public_send(tool.name, **arguments)
+          result = tool.handler_name.constantize.new(credential).public_send(tool.handler_method, **arguments)
           SolidusMcp::Server.response(result)
         rescue AccessDenied, *errors => e
           MCP::Tool::Response.new([{type: "text", text: e.message}], error: true)
@@ -37,7 +43,7 @@ module SolidusMcp
           MCP::Tool::Response.new([{type: "text", text: "Resource is unavailable to this connection"}], error: true)
         end
       end
-      MCP::Server.new(name: name, version: version, tools: tools, instructions: instructions)
+      tools
     end
 
     def self.response(result)

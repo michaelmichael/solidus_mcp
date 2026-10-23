@@ -95,6 +95,67 @@ server = SolidusMcp::Server.build(
 Use the SDK's Streamable HTTP transport to serve it. The host is responsible for
 token validation, resource audience, origin validation and OAuth consent.
 
+## One class per tool
+
+The class interface keeps a tool's metadata, inputs and implementation together.
+The existing `registry.tool` handler interface remains supported. For example,
+place this class in `app/tools/my_store/products/publish.rb`:
+
+```ruby
+module MyStore
+  module Products
+    class Publish < SolidusMcp::Tool
+      tool_name :publish_product
+      resource :products
+      permissions "products.publish"
+      scope "products:write"
+      description "Publish a prepared product."
+      read_only false
+      input :product_id, type: "integer", minimum: 1, required: true
+
+      def call(product_id:)
+        authorize!
+        # Delegate to a host service that checks records and proposed changes,
+        # enforces business rules, and performs the transaction and audit.
+        MyStore::Operations.new(credential).publish_product(product_id: product_id)
+      end
+    end
+  end
+end
+```
+
+Register it after declaring its resources:
+
+```ruby
+Rails.application.config.to_prepare do
+  registry = SolidusMcp::Registry.new
+  registry.resource :products, model: "Spree::Product", label: "Products",
+    actions: {publish: :update}
+  registry.register MyStore::Products::Publish
+  SolidusMcp.registry = registry.seal!
+end
+```
+
+`input` accepts JSON Schema keywords; `required: true` adds the input to the
+object's required list. `scope` and `permissions` accept multiple strings.
+All tools must explicitly declare `read_only`, scopes and permissions. Tool
+classes must be named subclasses with a public `call` method. Registrations
+snapshot and freeze schemas, retain class names for Rails reloading, and pass
+through the same validation as `registry.tool`.
+
+Each invocation gets a new handler with `credential` and `policy` accessors.
+The server always authorizes before calling the handler. Call `authorize!` at
+the start of `call` as well if the class is used directly by application code.
+This does not replace record checks: use `policy.scope` and
+`policy.authorize_record!` for records, related records and proposed changes.
+
+For an incremental migration, `SolidusMcp::Server.tools(credential:, errors: [])`
+returns policy-protected SDK tools plus the two capability tools. A host may
+combine them with existing tools in its own `MCP::Server`. Remove migrated tools
+from the old list to avoid duplicate names. Capability discovery only describes
+registry tools, and registry permissions do not protect any legacy tools left
+outside it. Prefer `SolidusMcp::Server.build` once all tools are registered.
+
 ## Authorization contract
 
 A tool requires an active credential, all its OAuth scopes, all its connection
