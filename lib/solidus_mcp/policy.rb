@@ -18,7 +18,7 @@ module SolidusMcp
       raise AccessDenied, "Credential is no longer active" unless @credential.active?
       connection = ConnectionPolicy.find_by(application_id: @credential.token.application_id,
         user_id: @credential.user.id)
-      raise AccessDenied, "Connection is disabled" if connection && !connection.enabled?
+      raise AccessDenied, "Connection is disabled" if connection && (!connection.enabled? || connection.deleted_at?)
       raise AccessDenied, "Tool permission is not enabled" unless connection&.permissions&.include?(tool.permission)
       missing = tool.scopes.reject { |scope| @credential.permits?(scope) }
       raise InsufficientScope.new(missing) if missing.any?

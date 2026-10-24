@@ -55,7 +55,7 @@ module SolidusMcp
         return head :unauthorized
       end
       connection = ConnectionPolicy.find_by(application_id: @credential.token.application_id, user_id: @credential.user.id)
-      head :forbidden if connection && !connection.enabled?
+      head :forbidden if connection && (!connection.enabled? || connection.deleted_at?)
     end
   end
 end

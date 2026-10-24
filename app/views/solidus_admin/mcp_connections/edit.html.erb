@@ -5,6 +5,10 @@
   <p class="mb-4">Changes apply to this person's connection, including refreshed tokens. An unchecked permission blocks every tool that needs it.</p>
   <p class="mb-6">Scopes on active tokens (tokens may differ): <%= @scopes.presence&.join(", ") || "No unexpired access tokens. Reconnect or refresh to use this connection." %>. Enabling a permission here does not add scopes to an existing token.</p>
 
+  <% if @policy.deleted_at? %>
+    <p class="mb-4">This permission set was deleted and access is disabled. To restore it, choose permissions, enable the connection, and select Restore permission set. OAuth scope limits still apply.</p>
+  <% end %>
+
   <%= form_with url: solidus_admin.mcp_connection_path(@application, user_id: @user.id), method: :patch, local: true do %>
     <%= hidden_field_tag "connection_policy[lock_version]", @policy.persisted? ? @policy.lock_version : -1 %>
     <%= hidden_field_tag "connection_policy[enabled]", "0", id: nil %>
@@ -25,7 +29,18 @@
         <% end %>
       </fieldset>
     <% end %>
-    <%= submit_tag "Save permissions", class: "mt-6 px-4 py-2 rounded bg-black text-white cursor-pointer" %>
+    <%= submit_tag(@policy.deleted_at? ? "Restore permission set" : "Save permissions", class: "mt-6 px-4 py-2 rounded bg-black text-white cursor-pointer") %>
+  <% end %>
+
+  <% unless @policy.deleted_at? %>
+    <section class="mt-8" aria-labelledby="delete-permissions-heading">
+      <h2 id="delete-permissions-heading" class="text-lg font-semibold">Delete permission set</h2>
+      <p class="my-3">Remove all tool permissions and disable this connection. The permission set moves to Deleted permission sets; its audit history is retained. Other users and OAuth client registrations are unaffected.</p>
+      <%= form_with url: solidus_admin.mcp_connection_path(@application, user_id: @user.id), method: :delete, local: true, data: {turbo_confirm: "Delete this permission set and disable its access?"} do %>
+        <%= hidden_field_tag "connection_policy[lock_version]", @policy.persisted? ? @policy.lock_version : -1, id: nil %>
+        <%= submit_tag "Delete permission set", class: "px-4 py-2 rounded border cursor-pointer" %>
+      <% end %>
+    </section>
   <% end %>
 
   <section class="mt-8" aria-labelledby="reconnect-heading">
@@ -39,6 +54,7 @@
   <% @changes.each do |change| %>
     <details class="mb-3">
       <summary><%= change.created_at.iso8601 %> — administrator #<%= change.actor_id %></summary>
+      <% if change.new_values["deleted_at"].present? %><p>Permission set deleted.</p><% elsif change.previous_values["deleted_at"].present? %><p>Permission set restored.</p><% end %>
       <p>Enabled: <%= change.previous_values["enabled"] %> → <%= change.new_values["enabled"] %></p>
       <p>Removed: <%= (change.previous_values["permissions"] - change.new_values["permissions"]).join(", ").presence || "None" %></p>
       <p>Added: <%= (change.new_values["permissions"] - change.previous_values["permissions"]).join(", ").presence || "None" %></p>
