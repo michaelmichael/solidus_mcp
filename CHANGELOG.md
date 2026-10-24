@@ -1,19 +1,24 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.2.0 (unreleased)
 
-- Inline OAuth scope warnings in AI connections, including expired and mixed
-  token cases, plus host-configurable reconnect instructions. Saving a store
-  permission never changes token scopes.
+- Replace resource/operation maps with an automatically registered catalog of
+  twelve built-in tools and additive custom tool classes.
+- Add standard product, pricing, inventory-read and order-read implementations
+  with explicit serializers and record authorization.
+- Add per-entry bulk pricing using normal Solidus validation and row locks.
+- Own the authenticated Streamable HTTP endpoint, OAuth metadata, registration
+  and consent integration while retaining Doorkeeper token/PKCE handling.
+- Use independent `mcp:read` / `mcp:write` scopes and unique default-deny tool
+  permissions; support standard OAuth insufficient-scope challenges.
+- Retain transactional permission auditing, optimistic locking and SolidusAdmin
+  controls, grouped by tool category with scope diagnostics.
+- Add direct gem migration task, real Solidus integration coverage and actual
+  development/production loading checks.
+- Breaking: remove resource declarations, legacy handler registration, scope
+  implications, default grants and redundant capability-discovery tools. See
+  README for the one-time migration and immutable release workflow.
 
-- Optional `SolidusMcp::Tool` classes with co-located declarations and handlers,
-  registered with `Registry#register`; legacy handler registration is unchanged.
-- Policy-protected SDK tools exposed through `Server.tools` for incremental host
-  migrations, with class-name resolution compatible with Rails reloading.
+## 0.1.0
 
-- Explicit resource, permission and MCP tool registry.
-- Per-application/user grants, OAuth scope and Solidus ability checks.
-- Permission-aware discovery and execution using the Ruby MCP SDK.
-- Optional SolidusAdmin connection management with CSRF protection, stale-write
-  detection and transactional permission-change history.
-- Standalone Rails test application and CI for admin and core-only installations.
+Initial unpublished registry, connection permissions and admin integration.

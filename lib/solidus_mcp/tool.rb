@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module SolidusMcp
-  # A server-owned tool declaration and request-local implementation. The registry
-  # stores the class name, never the class object, so Rails can reload tool files.
+  # Metadata and implementation live together. Invoke through .execute; #call is
+  # deliberately protected so direct Ruby callers use the same checks as MCP.
   class Tool
     class << self
       def inherited(subclass)
@@ -10,18 +10,12 @@ module SolidusMcp
         subclass.instance_variable_set(:@declaration, declaration.deep_dup)
       end
 
-      %i[tool_name description resource read_only].each do |key|
-        define_method(key) do |value|
-          declaration[key] = value
-        end
+      %i[tool_name description category permission read_only].each do |key|
+        define_method(key) { |value| declaration[key] = value }
       end
 
-      def permissions(*keys)
-        declaration[:permissions] = keys.flatten
-      end
-
-      def scope(*scopes)
-        declaration[:scope] = scopes.flatten
+      def ability(action, model)
+        declaration[:abilities] << [action.to_sym, model.to_s]
       end
 
       def input(name, required: false, **schema)
@@ -32,32 +26,38 @@ module SolidusMcp
       end
 
       def registration
-        {
-          name: declaration.fetch(:tool_name), resource: declaration.fetch(:resource),
-          permissions: declaration.fetch(:permissions), handler: name, handler_method: :call,
-          definition: declaration.slice(:scope, :description, :read_only, :properties, :required)
-        }
+        declaration.deep_dup.merge(class_name: name,
+          input_schema: {type: "object", properties: declaration[:properties],
+                         required: declaration[:required], additionalProperties: false})
+      end
+
+      def execute(credential:, **arguments)
+        entry = SolidusMcp.registry.tools[registration.fetch(:tool_name).to_s]
+        raise AccessDenied, "Unregistered tool" unless entry && entry.class_name == name
+        policy = Policy.new(credential)
+        policy.authorize!(entry)
+        MCP::Tool::InputSchema.new(entry.input_schema).validate_arguments(arguments)
+        new(credential, policy).send(:call, **arguments)
       end
 
       private
 
       def declaration
-        @declaration ||= {properties: {}, required: []}
+        @declaration ||= {properties: {}, required: [], abilities: []}
       end
     end
 
     attr_reader :credential, :policy
 
-    def initialize(credential)
+    def initialize(credential, policy)
       @credential = credential
-      @policy = Policy.new(credential)
+      @policy = policy
     end
 
-    # Use at the service entry point too when calling a tool outside the server.
+    protected
+
     def authorize!
-      tool = SolidusMcp.registry.tools[self.class.registration.fetch(:name).to_s]
-      raise AccessDenied, "Tool is not registered to this handler" unless tool&.handler_name == self.class.name && tool.handler_method == "call"
-      policy.authorize!(tool)
+      policy.authorize!(SolidusMcp.registry.tools.fetch(self.class.registration.fetch(:tool_name).to_s))
     end
   end
 end

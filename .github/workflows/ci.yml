@@ -49,10 +49,12 @@ jobs:
       - name: Specs
         run: |
           if [ "$WITHOUT_ADMIN" = "1" ]; then
-            bundle exec rspec --exclude-pattern 'spec/requests/**/*_spec.rb'
+            bundle exec rspec --exclude-pattern 'spec/requests/connections_spec.rb'
           else
             bundle exec rspec
           fi
+      - name: Development and production loading
+        run: bundle exec ruby bin/check-loading
       - name: Ruby style
         run: bundle exec standardrb
       - name: Build gem

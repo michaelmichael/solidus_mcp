@@ -3,7 +3,7 @@
   <p class="mb-6">Choose what each assistant can do for the person who connected it. Permissions also remain limited by that person's store access and OAuth consent.</p>
 
   <table class="w-full text-left border-collapse">
-    <thead><tr><th class="p-3 border-b">Application</th><th class="p-3 border-b">Connected by</th><th class="p-3 border-b">Permissions</th><th class="p-3 border-b">Manage</th></tr></thead>
+    <thead><tr><th class="p-3 border-b">Application</th><th class="p-3 border-b">Connected by</th><th class="p-3 border-b">Authorization</th><th class="p-3 border-b">Permissions</th><th class="p-3 border-b">Manage</th></tr></thead>
     <tbody>
       <% @connections.each do |connection| %>
         <% application = @applications[connection.application_id]; user = @users[connection.resource_owner_id] %>
@@ -12,7 +12,8 @@
         <tr>
           <td class="p-3 border-b"><%= application.name %></td>
           <td class="p-3 border-b"><%= user.email %></td>
-          <td class="p-3 border-b"><%= policy ? (policy.enabled? ? "Custom permissions" : "Disabled") : "Default permissions" %></td>
+          <td class="p-3 border-b"><%= @active_connections.include?([application.id, user.id]) ? "Active token" : "No active token" %></td>
+          <td class="p-3 border-b"><%= policy ? (policy.enabled? ? "Custom permissions" : "Disabled") : "No tools enabled" %></td>
           <td class="p-3 border-b"><%= link_to "Edit permissions", solidus_admin.edit_mcp_connection_path(application, user_id: user.id), class: "underline" %></td>
         </tr>
       <% end %>

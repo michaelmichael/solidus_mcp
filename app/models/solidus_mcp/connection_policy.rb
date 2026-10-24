@@ -24,7 +24,7 @@ module SolidusMcp
         end
         self.lock_version = new_record? ? 0 : lock_version
         previous = persisted? ? attributes.slice("permissions", "enabled") :
-          {"permissions" => SolidusMcp.default_permissions, "enabled" => true}
+          {"permissions" => [], "enabled" => true}
         assign_attributes(permissions: permissions.uniq.sort, enabled: enabled)
         save!
         current = attributes.slice("permissions", "enabled")
@@ -39,9 +39,8 @@ module SolidusMcp
     end
 
     def known_permissions
-      unless permissions.is_a?(Array) && permissions.all? { |key| key.is_a?(String) && SolidusMcp.registry.permissions.key?(key) }
-        errors.add(:permissions, "contain an unknown operation")
-      end
+      valid = permissions.is_a?(Array) && permissions.all? { |key| key.is_a?(String) && (SolidusMcp.registry.permissions.include?(key) || Array(permissions_in_database).include?(key)) }
+      errors.add(:permissions, "contain an unknown operation") unless valid
     end
   end
 end
