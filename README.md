@@ -138,9 +138,15 @@ Scopes are independent:
 - `mcp:read` authorizes enabled read tools.
 - `mcp:write` authorizes enabled write tools.
 
-Clients wanting both request both. Consent displays only the requested scopes;
-write is never added to a read-only request. Client registration's permitted
-scopes are a ceiling, not a grant. A write-only token does not imply read scope.
+Clients wanting both can request both. For clients without scope controls, the
+consent page provides **Need additional access?**: select the desired access,
+click **Review access**, then review and **Authorize**. Extra access is unchecked
+unless requested. Reviewing issues no code or token and preserves the client's
+state, callback, resource and PKCE challenge. Only scopes allowed by the client
+registration are offered; read-only registrations cannot be upgraded here.
+The consent summary displays the selected scopes; write is never silently added
+to a read-only request. Client registration's permitted scopes are a ceiling,
+not a grant. A write-only token does not imply read scope.
 An administrator can enable a write permission on a read-only connection, but
 it remains ineffective and the UI explains the missing OAuth authorization.
 
@@ -197,31 +203,17 @@ and explicit serializers are still the tool author's responsibility. Trusted
 custom Ruby code is not sandboxed. Class names and schemas are rebuilt in Rails'
 `to_prepare`; reloadable classes are not retained in a global registry.
 
-## Upgrade from the unpublished registry implementation
+## Development baseline
 
-This is a one-time breaking migration, not a compatible internal API update.
+Version 0.2 is the canonical implementation. The earlier unpublished host
+registry and handlers are retired; their APIs and tool catalog are not supported.
+Use this engine's built-in tools and custom-tool API for all new work. Hosts
+should mount the engine directly and remove duplicate MCP controllers, handlers,
+serializers and registry configuration. There is no compatibility mode.
 
-1. Preserve OAuth registrations, token tables, connection policies and audit
-   tables. Back up and verify the existing migration history.
-2. Configure/mount the engine, keeping the canonical resource URL and existing
-   OAuth routes where possible. Remove duplicate host routes/controllers for
-   standard MCP behavior and the host registry/handler/serializer declarations.
-3. Keep genuinely store-specific operations as custom tool classes. Do not copy
-   quote-only behavior, custom fields or inventory mutations into standard tools.
-4. Reconcile copied engine migrations before switching to direct gem migrations.
-   If the original policy migration was installed with a different timestamp,
-   verify its schema matches and record the canonical `20261023000000` as already
-   applied before running `solidus_mcp:migrate`. Do not rerun table creation or
-   remove audit data. Keep already-applied historical migration records.
-5. Review and explicitly grant the new per-tool permission keys. Old keys remain
-   stored but inert; no broad grants are inferred. Legacy narrow-scope clients
-   need an explicit registration/authorization update to use the new scopes.
-   Existing read/write tokens retain their exact scopes. In particular, a legacy
-   write-only token now needs explicit read authorization to use read tools.
-6. Run the focused integration checks against the real host before production.
-
-Subsequent standard tool additions, changes and removals require gem changes
-only. Existing connection grants and custom tools remain intact.
+Tool permission keys and read/write consent are explicit. Newly added tools
+start disabled. Standard tool additions and changes belong in this repository;
+the host only supplies configuration and any genuinely store-specific tools.
 
 ## Releases without Store API commits
 

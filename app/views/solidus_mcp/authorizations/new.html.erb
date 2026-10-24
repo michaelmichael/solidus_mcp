@@ -22,4 +22,22 @@
       <%= submit_tag label %>
     <% end %>
   <% end %>
+  <section aria-labelledby="additional-access-heading">
+    <h2 id="additional-access-heading">Need additional access?</h2>
+    <p>If your client cannot request write access, choose it here, then select Review access. You will review the updated access before authorizing.</p>
+    <%= form_tag "#{SolidusMcp.configuration.endpoint_url}/oauth/authorize", method: :get, id: "review-oauth-scopes" do %>
+      <%= hidden_field_tag :review_scopes, "1" %>
+      <% %i[client_id redirect_uri state response_type code_challenge code_challenge_method resource].each do |key| %>
+        <%= hidden_field_tag key, params[key], id: nil %>
+      <% end %>
+      <% scope_options.each do |scope| %>
+        <p><label>
+          <%= check_box_tag "requested_scopes[]", scope, @pre_auth.scopes.include?(scope), id: "oauth_scope_#{scope.tr(':', '_')}" %>
+          <%= scope == "mcp:write" ? "Use enabled write tools, including tools enabled later" : "Use enabled read tools" %> (<code><%= scope %></code>)
+        </label></p>
+      <% end %>
+      <%= submit_tag "Review access" %>
+    <% end %>
+    <p>Read and write access are separate; select both if you need both. Individual tools must still be enabled in AI connections. If write access is not listed, the client's registration must be updated before reconnecting.</p>
+  </section>
 </main></body></html>

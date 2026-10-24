@@ -2,6 +2,11 @@
 
 ## 0.2.0 (unreleased)
 
+- Make the self-contained engine the canonical implementation; retire the
+  unpublished host registry API and compatibility instructions.
+- Offer explicit read/write access review on the consent screen for clients
+  without scope controls, preserving registration limits and PKCE.
+
 - Add audited permission-set deletion, a deleted-sets view and explicit restoration.
 
 - Replace resource/operation maps with an automatically registered catalog of
@@ -19,7 +24,7 @@
   development/production loading checks.
 - Breaking: remove resource declarations, legacy handler registration, scope
   implications, default grants and redundant capability-discovery tools. See
-  README for the one-time migration and immutable release workflow.
+  README for installation and the immutable release workflow.
 
 ## 0.1.0
 
