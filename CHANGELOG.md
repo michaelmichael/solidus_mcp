@@ -2,6 +2,8 @@
 
 ## 0.2.0 (unreleased)
 
+- Add audited permission-set deletion, a deleted-sets view and explicit restoration.
+
 - Replace resource/operation maps with an automatically registered catalog of
   twelve built-in tools and additive custom tool classes.
 - Add standard product, pricing, inventory-read and order-read implementations

@@ -81,6 +81,11 @@ remains available, but requires managing copied files.
 
 Start the app, connect an OAuth client, then enable individual tools in
 SolidusAdmin **AI connections**. New connections have no tool permissions.
+Delete a permission set from its edit screen to clear all grants, disable access
+and move it out of the active list. Deleted permission sets retain their audit
+history and can be explicitly restored. Deletion does not revoke OAuth tokens
+or remove the client registration; execution stays denied until restored.
+
 Without SolidusAdmin, a trusted host administrative process can use
 `ConnectionPolicy#change!`; permission management is never an MCP tool.
 

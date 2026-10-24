@@ -15,10 +15,13 @@ RSpec.describe "MCP connection management", type: :request do
     {"X-Test-User" => @request_user&.id.to_s}
   end
 
-  def form_token
+  def form_token(method = "patch")
     get edit_path, headers: request_headers
     expect(response).to have_http_status(:ok)
-    Nokogiri::HTML(response.body).at_css('form[action*="/mcp_connections/"] input[name="authenticity_token"]')["value"]
+    form = Nokogiri::HTML(response.body).css('form[action*="/mcp_connections/"]').find do |element|
+      element.at_css('input[name="_method"]')&.[]("value") == method
+    end
+    form.at_css('input[name="authenticity_token"]')["value"]
   end
 
   def save_policy(csrf: form_token, permissions: ["get_product"], enabled: "1", version: "-1")
@@ -170,5 +173,78 @@ RSpec.describe "MCP connection management", type: :request do
     application.destroy!
     expect(policy.reload.application_uid).to eq(uid)
     expect(policy.policy_changes.last.actor_id).to eq(admin.id)
+  end
+  def delete_policy(version:, csrf: form_token("delete"))
+    delete path, headers: request_headers, params: {authenticity_token: csrf, connection_policy: {lock_version: version.to_s}}
+  end
+
+  it "deletes a permission set, denies cached tools and retains its audit history" do
+    @request_user = admin
+    saved = grant(application: application, user: admin, permissions: ["get_product"])
+    credential = SolidusMcp::Credential.new(token, admin)
+    server = SolidusMcp::Server.build(credential: credential)
+    delete_policy(version: saved.lock_version)
+    expect(response).to have_http_status(:see_other)
+    expect(saved.reload.deleted_at).to be_present
+    expect(saved.permissions).to eq([])
+    expect(saved).not_to be_enabled
+    expect(saved.policy_changes.last.actor_id).to eq(admin.id)
+    expect(saved.policy_changes.last.new_values["deleted_at"]).to be_present
+    result = JSON.parse(server.handle_json({jsonrpc: "2.0", id: 1, method: "tools/call", params: {name: "get_product", arguments: {product_id: 1}}}.to_json))
+    expect(result.dig("result", "isError")).to be(true)
+    expect(token.reload).not_to be_revoked
+    get "/admin/mcp_connections", headers: request_headers
+    expect(response.body).not_to include("Catalog assistant")
+    get "/admin/mcp_connections?deleted=1", headers: request_headers
+    expect(response.body).to include("Catalog assistant", "Review or restore")
+  end
+
+  it "can delete a connection with no saved permissions and restore it explicitly" do
+    @request_user = admin
+    delete_policy(version: -1)
+    expect(response).to have_http_status(:see_other)
+    saved = SolidusMcp::ConnectionPolicy.find_by!(application: application, user: admin)
+    get edit_path, headers: request_headers
+    expect(response.body).to include("Restore permission set")
+    save_policy(version: saved.lock_version.to_s)
+    expect(response).to have_http_status(:see_other)
+    expect(saved.reload.deleted_at).to be_nil
+    expect(saved.permissions).to eq(["get_product"])
+    expect(saved).to be_enabled
+    expect(saved.policy_changes.count).to eq(2)
+  end
+
+  it "does not delete a permission set from a stale form" do
+    @request_user = admin
+    saved = grant(application: application, user: admin, permissions: ["get_product"])
+    csrf = form_token("delete")
+    saved.change!(actor: admin, permissions: ["search_products"], enabled: true, lock_version: saved.lock_version)
+    delete_policy(version: 0, csrf: csrf)
+    expect(response).to have_http_status(:conflict)
+    expect(saved.reload.deleted_at).to be_nil
+    expect(saved.permissions).to eq(["search_products"])
+  end
+
+  it "requires CSRF and administrator authorization to delete" do
+    @request_user = admin
+    delete_policy(version: -1, csrf: "invalid")
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(SolidusMcp::ConnectionPolicy.count).to eq(0)
+    csrf = form_token("delete")
+    @request_user = create_user(admin: false)
+    delete_policy(version: -1, csrf: csrf)
+    expect(response).to have_http_status(:forbidden)
+    expect(SolidusMcp::ConnectionPolicy.count).to eq(0)
+  end
+
+  it "rolls back deletion when the audit fails and leaves other users untouched" do
+    saved = grant(application: application, user: admin, permissions: ["get_product"])
+    other_user = create_user
+    other = grant(application: application, user: other_user, permissions: ["search_products"])
+    allow_any_instance_of(SolidusMcp::PolicyChange).to receive(:save!).and_raise(ActiveRecord::RecordInvalid.new(SolidusMcp::PolicyChange.new))
+    expect { saved.delete_permissions!(actor: admin, lock_version: saved.lock_version) }.to raise_error(ActiveRecord::RecordInvalid)
+    expect(saved.reload.deleted_at).to be_nil
+    expect(saved.permissions).to eq(["get_product"])
+    expect(other.reload.permissions).to eq(["search_products"])
   end
 end
