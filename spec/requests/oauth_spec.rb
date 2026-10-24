@@ -36,7 +36,8 @@ RSpec.describe "Engine OAuth", type: :request do
     consent
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Read access")
-    expect(response.body).not_to include("Write access", "requested_scopes")
+    expect(response.body).not_to include("<h2>Write access</h2>")
+    expect(Nokogiri::HTML(response.body).at_css('input[value="mcp:write"]')["checked"]).to be_nil
     consent(request_params.merge(scope: "mcp:read mcp:write"))
     expect(response.body).to include("Read access", "Write access")
     consent(request_params.merge(scope: "mcp:write"))
@@ -91,11 +92,13 @@ RSpec.describe "Engine OAuth", type: :request do
     expect(response.parsed_body["error"]).to eq("invalid_grant")
   end
 
-  it "rejects unsupported scopes and the former consent scope rewriting interface" do
+  it "rejects unsupported scopes and malformed selections" do
     consent(request_params.merge(scope: "products:write"))
     expect(response).to have_http_status(:bad_request)
-    consent(request_params.merge(requested_scopes: ["mcp:write"]))
-    expect(response.parsed_body["error"]).to eq("invalid_scope")
+    ["mcp:write", [], ["unsupported"], [{scope: "mcp:write"}]].each do |selected|
+      consent(request_params.merge(review_scopes: "1", requested_scopes: selected))
+      expect(response.parsed_body["error"]).to eq("invalid_scope")
+    end
   end
 
   it "does not exceed a client's registered scope ceiling" do
@@ -114,5 +117,59 @@ RSpec.describe "Engine OAuth", type: :request do
     expect(SolidusMcp::ConnectionPolicy.count).to eq(0)
     post "/mcp/oauth/register", params: {redirect_uris: ["https://evil.example/*"]}.to_json, headers: {"Content-Type" => "application/json"}
     expect(response).to have_http_status(:bad_request)
+  end
+  it "reviews extra access and completes the original PKCE flow without granting tool permissions" do
+    consent(request_params.except(:scope))
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css('input[value="mcp:write"]')["checked"]).to be_nil
+    form = document.at_css("#review-oauth-scopes")
+    fields = form.css('input[type="hidden"]').to_h { |input| [input["name"], input["value"]] }
+    fields["requested_scopes"] = %w[mcp:read mcp:write]
+    consent(fields)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("<h2>Write access</h2>")
+    expect(Doorkeeper::AccessGrant.count).to eq(0)
+    expect(Doorkeeper::AccessToken.count).to eq(0)
+    form = Nokogiri::HTML(response.body).at_css('form[method="post"]')
+    approved = form.css("input[name]").to_h { |input| [input["name"], input["value"]] }
+    %w[client_id redirect_uri state resource code_challenge code_challenge_method].each do |key|
+      expect(approved[key]).to eq(request_params[key.to_sym])
+    end
+    post "/mcp/oauth/authorize", params: approved, headers: {"X-Test-User" => user.id.to_s}
+    expect(response).to have_http_status(:found)
+    callback = Rack::Utils.parse_query(URI(response.location).query)
+    expect(callback["state"]).to eq("test-state")
+    exchange(callback.fetch("code"))
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body["scope"].split).to contain_exactly("mcp:read", "mcp:write")
+    expect(SolidusMcp::ConnectionPolicy.count).to eq(0)
+  end
+
+  it "enforces registration, callback, audience and PKCE limits during scope review" do
+    application.update!(scopes: "mcp:read")
+    consent
+    expect(response.body).not_to include('value="mcp:write"')
+    consent(request_params.merge(requested_scopes: %w[mcp:read mcp:write]))
+    expect(response.body).not_to include('value="Authorize"')
+    application.update!(scopes: "mcp:read mcp:write")
+    [{redirect_uri: "https://evil.example/callback"}, {resource: "https://evil.example/mcp"}, {code_challenge_method: "plain"}].each do |invalid|
+      consent(request_params.merge(requested_scopes: %w[mcp:read mcp:write]).merge(invalid))
+      expect(response.body).not_to include('value="Authorize"')
+    end
+    expect(Doorkeeper::AccessGrant.count).to eq(0)
+    expect(Doorkeeper::AccessToken.count).to eq(0)
+  end
+
+  it "requires review via GET and administrator consent before granting selected access" do
+    consent
+    csrf = Nokogiri::HTML(response.body).at_css('input[name="authenticity_token"]')["value"]
+    post "/mcp/oauth/authorize", params: request_params.merge(authenticity_token: csrf, requested_scopes: %w[mcp:read mcp:write]),
+      headers: {"X-Test-User" => user.id.to_s}
+    expect(response).to have_http_status(:bad_request)
+    user.update!(admin: false)
+    consent(request_params.merge(requested_scopes: %w[mcp:read mcp:write]))
+    expect(response).to have_http_status(:forbidden)
+    expect(Doorkeeper::AccessGrant.count).to eq(0)
   end
 end

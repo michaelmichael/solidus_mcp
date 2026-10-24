@@ -4,14 +4,28 @@ module SolidusMcp
   class AuthorizationsController < Doorkeeper::AuthorizationsController
     layout false
     before_action :validate_mcp_request
+    helper_method :scope_options
 
     private
+
+    def scope_options
+      registered = @pre_auth.client.application.scopes.to_a
+      configured = Doorkeeper.config.default_scopes.to_a | Doorkeeper.config.optional_scopes.to_a
+      Credential::SCOPES & configured & (registered.empty? ? Credential::SCOPES : registered)
+    end
 
     def validate_mcp_request
       return head :not_found unless SolidusMcp.configuration.enabled?
       return render json: {error: "invalid_target"}, status: :bad_request unless params[:resource] == SolidusMcp.configuration.endpoint_url
       if params.key?(:requested_scopes) || params.key?(:review_scopes)
-        return render json: {error: "invalid_scope"}, status: :bad_request
+        selected = params[:requested_scopes]
+        unless action_name == "new" && request.get? && selected.is_a?(Array) && selected.any? &&
+            selected.all? { |scope| scope.is_a?(String) } && (selected - Credential::SCOPES).empty?
+          return render json: {error: "invalid_scope"}, status: :bad_request
+        end
+        # Review prepares a new consent summary, never a grant. Doorkeeper
+        # still validates the client, callback and registered scope ceiling.
+        params[:scope] = selected.uniq.join(" ")
       end
       scopes = params[:scope].presence || "mcp:read"
       unless scopes.is_a?(String) && scopes.split.any? && (scopes.split - Credential::SCOPES).empty?
