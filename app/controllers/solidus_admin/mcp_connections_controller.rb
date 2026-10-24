@@ -7,13 +7,17 @@ module SolidusAdmin
 
     def index
       @page = [params[:page].to_i, 1].max
-      @connections = Doorkeeper::AccessToken.where.not(application_id: nil).where.not(resource_owner_id: nil)
+      @connections = Doorkeeper::AccessToken.where(resource: SolidusMcp.configuration.endpoint_url).where.not(application_id: nil).where.not(resource_owner_id: nil)
         .select(:application_id, :resource_owner_id).distinct.order(:application_id, :resource_owner_id)
         .offset((@page - 1) * 25).limit(26).to_a
       @more = @connections.size > 25
       @connections = @connections.first(25)
       @applications = Doorkeeper::Application.where(id: @connections.map(&:application_id)).index_by(&:id)
       @users = Spree.user_class.where(id: @connections.map(&:resource_owner_id)).index_by(&:id)
+      @active_connections = Doorkeeper::AccessToken.where(resource: SolidusMcp.configuration.endpoint_url,
+        application_id: @applications.keys, resource_owner_id: @users.keys, revoked_at: nil)
+        .where("expires_in IS NULL OR created_at + expires_in * interval '1 second' > ?", Time.current)
+        .distinct.pluck(:application_id, :resource_owner_id)
       @policies = SolidusMcp::ConnectionPolicy.where(application_id: @applications.keys, user_id: @users.keys)
         .index_by { |policy| [policy.application_id, policy.user_id] }
     end
@@ -61,13 +65,13 @@ module SolidusAdmin
     def load_connection
       @application = Doorkeeper::Application.find(params[:id])
       @user = Spree.user_class.find(params.require(:user_id))
-      tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: @user.id)
+      tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: @user.id, resource: SolidusMcp.configuration.endpoint_url)
       raise ActiveRecord::RecordNotFound unless tokens.exists?
       scope_sets = tokens.where(revoked_at: nil).where("expires_in IS NULL OR created_at + expires_in * interval '1 second' > ?", Time.current).pluck(:scopes)
       @scopes = scope_sets.flat_map { |scopes| scopes.to_s.split }.uniq.sort
       @scope_status = SolidusMcp::ConnectionScopes.new(scope_sets)
       @policy = SolidusMcp::ConnectionPolicy.find_or_initialize_by(application: @application, user: @user)
-      @policy.permissions = SolidusMcp.default_permissions if @policy.new_record?
+      @policy.permissions = [] if @policy.new_record?
       @registry = SolidusMcp.registry
       @changes = @policy.persisted? ? @policy.policy_changes.order(id: :desc).limit(10) : []
     end

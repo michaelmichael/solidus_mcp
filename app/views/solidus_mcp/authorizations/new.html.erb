@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Connect to your Solidus store</title></head>
+<body><main>
+  <h1>Connect <%= @pre_auth.client.application.name %> to your Solidus store</h1>
+  <p>Approve only if you started this connection. The client supplies its name.</p>
+  <p>Return address: <%= @pre_auth.redirect_uri %></p>
+  <% if @pre_auth.scopes.include?("mcp:read") %>
+    <h2>Read access</h2>
+    <ul><li>Search products and variants.</li><li>View prices and inventory.</li><li>Read order information.</li></ul>
+  <% end %>
+  <% if @pre_auth.scopes.include?("mcp:write") %>
+    <h2>Write access</h2>
+    <ul><li>Modify product information.</li><li>Update prices.</li><li>Perform other explicitly enabled store-management operations.</li></ul>
+  <% end %>
+  <p>Administrators must also enable individual tools in AI connections. They can change enabled tools within this access level without reconnecting.</p>
+  <% {"Authorize" => :post, "Deny" => :delete}.each do |label, method| %>
+    <%= form_tag "#{SolidusMcp.configuration.endpoint_url}/oauth/authorize", method: method do %>
+      <% %i[client_id redirect_uri state response_type scope code_challenge code_challenge_method resource].each do |key| %>
+        <%= hidden_field_tag key, params[key], id: nil %>
+      <% end %>
+      <%= submit_tag label %>
+    <% end %>
+  <% end %>
+</main></body></html>

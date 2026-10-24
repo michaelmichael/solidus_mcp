@@ -1,0 +1,29 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "open3"
+root = File.expand_path("..", __dir__)
+program = <<~RUBY
+  require_relative "spec/dummy/config/environment"
+  raise "Wrong catalog" unless SolidusMcp.registry.tools.size == 13
+  raise "Missing custom tool" unless SolidusMcp.registry.tools.key?("loading_probe")
+  if Rails.env.development?
+    previous = LoadingProbe
+    previous_builtin = SolidusMcp::Tools::GetProduct
+    Rails.application.reloader.reload!
+    raise "Custom class did not reload" if previous.equal?(LoadingProbe)
+    raise "Built-in class did not reload" if previous_builtin.equal?(SolidusMcp::Tools::GetProduct)
+    raise "Catalog changed" unless SolidusMcp.registry.tools.size == 13
+  else
+    raise "Eager loading disabled" unless Rails.application.config.eager_load
+  end
+  puts "Checked " + Rails.env + " loading"
+RUBY
+%w[development production].each do |environment|
+  output, status = Open3.capture2e({"RAILS_ENV" => environment, "MCP_LOADING_CHECK" => "1",
+    "MCP_EAGER_LOAD" => (environment == "production" ? "1" : "0"),
+    "MCP_RELOADING" => (environment == "development" ? "1" : "0")},
+    "bundle", "exec", "ruby", "-e", program, chdir: root)
+  puts output
+  abort "Loading check failed" unless status.success?
+end

@@ -5,7 +5,7 @@ require "spec_helper"
 RSpec.describe "MCP connection management", type: :request do
   let(:admin) { create_user }
   let(:application) { Doorkeeper::Application.create!(name: "Catalog assistant", redirect_uri: "https://client.example/callback", confidential: false) }
-  let!(:token) { Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "catalog:read products:write", expires_in: 3600) }
+  let!(:token) { Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "mcp:read mcp:write", expires_in: 3600, resource: SolidusMcp.configuration.endpoint_url) }
   let(:path) { "/admin/mcp_connections/#{application.id}?user_id=#{admin.id}" }
   let(:edit_path) { "/admin/mcp_connections/#{application.id}/edit?user_id=#{admin.id}" }
 
@@ -21,7 +21,7 @@ RSpec.describe "MCP connection management", type: :request do
     Nokogiri::HTML(response.body).at_css('form[action*="/mcp_connections/"] input[name="authenticity_token"]')["value"]
   end
 
-  def save_policy(csrf: form_token, permissions: ["entries.read"], enabled: "1", version: "-1")
+  def save_policy(csrf: form_token, permissions: ["get_product"], enabled: "1", version: "-1")
     patch path, headers: request_headers, params: {authenticity_token: csrf,
                                                    connection_policy: {permissions: permissions, enabled: enabled, lock_version: version}}
   end
@@ -46,47 +46,46 @@ RSpec.describe "MCP connection management", type: :request do
     expect(response.body).to include("Catalog assistant", admin.email, "Edit permissions")
     get edit_path, headers: request_headers
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include('value="entries.publish"', 'value="entries.read"', "Tool requirements")
+    expect(response.body).to include('value="update_product"', 'value="get_product"', "Products")
     expect(response.body).not_to include(token.token, token.plaintext_token)
   end
 
   it "shows missing scopes beside permissions without expanding tokens when saved" do
-    token.update!(scopes: "catalog:read")
+    token.update!(scopes: "mcp:read")
     @request_user = admin
     get edit_path, headers: request_headers
-    expect(response.body).to include("Requires reconnection with products:write", "Reconnect to authorize additional access")
-    save_policy(permissions: ["entries.publish"])
+    expect(response.body).to include("Requires reconnection with mcp:write", "Reconnect to authorize additional access")
+    save_policy(permissions: ["update_product"])
     expect(response).to have_http_status(:see_other)
     expect(flash[:notice]).to include("OAuth access is still missing")
-    expect(token.reload.scopes.to_a).to eq(["catalog:read"])
+    expect(token.reload.scopes.to_a).to eq(["mcp:read"])
     expect(Doorkeeper::AccessToken.count).to eq(1)
   end
 
   it "warns about mixed tokens instead of implying every client has the union of scopes" do
-    token.update!(scopes: "catalog:read")
-    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "products:write", expires_in: 3600)
+    token.update!(scopes: "mcp:read")
+    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "mcp:write", resource: SolidusMcp.configuration.endpoint_url, expires_in: 3600)
     @request_user = admin
     get edit_path, headers: request_headers
-    expect(response.body).to include("Some active tokens lack products:write")
-    expect(response.body).to include("Some active tokens lack catalog:read")
+    expect(response.body).to include("Some active tokens lack mcp:write")
+    expect(response.body).to include("Some active tokens lack mcp:read")
   end
 
   it "ignores expired and revoked tokens when explaining missing scopes" do
-    token.update!(scopes: "catalog:read")
-    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "products:write", expires_in: 3600, created_at: 2.hours.ago)
-    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "products:write", expires_in: 3600, revoked_at: Time.current)
+    token.update!(scopes: "mcp:read")
+    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "mcp:write", resource: SolidusMcp.configuration.endpoint_url, expires_in: 3600, created_at: 2.hours.ago)
+    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "mcp:write", resource: SolidusMcp.configuration.endpoint_url, expires_in: 3600, revoked_at: Time.current)
     @request_user = admin
     get edit_path, headers: request_headers
-    expect(response.body).to include("Requires reconnection with products:write")
+    expect(response.body).to include("Requires reconnection with mcp:write")
     expect(response.body).not_to include("Some active tokens lack")
   end
 
   it "explains expired connections and renders host instructions as text" do
     token.revoke
-    SolidusMcp.reconnect_instructions = "Use Review access. <script>unsafe</script>"
     @request_user = admin
     get edit_path, headers: request_headers
-    expect(response.body).to include("No active access token", "Use Review access.", "&lt;script&gt;")
+    expect(response.body).to include("No active access token")
     expect(response.body).not_to include("<script>unsafe")
   end
 
@@ -104,11 +103,11 @@ RSpec.describe "MCP connection management", type: :request do
     save_policy
     expect(response).to have_http_status(:see_other)
     policy = SolidusMcp::ConnectionPolicy.find_by!(application: application, user: admin)
-    expect(policy.permissions).to eq(["entries.read"])
+    expect(policy.permissions).to eq(["get_product"])
     change = policy.policy_changes.last
     expect(change.actor_id).to eq(admin.id)
     expect(change.previous_values["permissions"]).to eq([])
-    expect(change.new_values["permissions"]).to eq(["entries.read"])
+    expect(change.new_values["permissions"]).to eq(["get_product"])
   end
 
   it "supports disabling a connection and denying all permissions" do
@@ -136,7 +135,7 @@ RSpec.describe "MCP connection management", type: :request do
   end
 
   it "does not overwrite a newer policy from a stale form" do
-    policy = SolidusMcp::ConnectionPolicy.create!(application: application, user: admin, permissions: ["entries.read"])
+    policy = SolidusMcp::ConnectionPolicy.create!(application: application, user: admin, permissions: ["get_product"])
     @request_user = admin
     csrf = form_token
     policy.change!(actor: admin, permissions: [], enabled: false, lock_version: policy.lock_version)
@@ -147,10 +146,10 @@ RSpec.describe "MCP connection management", type: :request do
   end
 
   it "rolls back a permission edit if its audit fails" do
-    policy = SolidusMcp::ConnectionPolicy.create!(application: application, user: admin, permissions: ["entries.read"])
+    policy = SolidusMcp::ConnectionPolicy.create!(application: application, user: admin, permissions: ["get_product"])
     allow_any_instance_of(SolidusMcp::PolicyChange).to receive(:save!).and_raise(ActiveRecord::RecordInvalid.new(SolidusMcp::PolicyChange.new))
     expect { policy.change!(actor: admin, permissions: [], enabled: false, lock_version: 0) }.to raise_error(ActiveRecord::RecordInvalid)
-    expect(policy.reload.permissions).to eq(["entries.read"])
+    expect(policy.reload.permissions).to eq(["get_product"])
     expect(policy).to be_enabled
   end
 

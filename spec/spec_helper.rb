@@ -10,13 +10,11 @@ RSpec.configure do |config|
   config.infer_spec_type_from_file_location!
   config.include TestCatalog::Helpers
   config.before do
-    SolidusMcp.registry = TestCatalog.registry
-    SolidusMcp.default_permissions = []
-    SolidusMcp.reconnect_instructions = nil
+    SolidusMcp.configuration.custom_tools = []
+    SolidusMcp.rebuild_registry!
   end
   config.after do
-    SolidusMcp.registry = SolidusMcp::Registry.new
-    SolidusMcp.default_permissions = []
-    SolidusMcp.reconnect_instructions = nil
+    SolidusMcp.configuration.custom_tools = []
+    SolidusMcp.rebuild_registry!
   end
 end

@@ -3,37 +3,24 @@
 require "spec_helper"
 
 RSpec.describe SolidusMcp::Registry do
-  let(:registry) { described_class.new }
-  let(:definition) { {scope: "catalog:read", description: "Read a product", properties: {id: {type: "integer"}}, required: ["id"], read_only: true} }
-
-  before { registry.resource(:products, model: "Spree::Product", label: "Products", actions: {read: :read}) }
-
-  it "rejects duplicate resources and tools" do
-    expect { registry.resource(:products, model: "Spree::Product", label: "Products", actions: {read: :read}) }.to raise_error(ArgumentError, /Duplicate resource/)
-    registry.tool(:read_product, resource: :products, permissions: ["products.read"], definition: definition, handler: "Example::Operations")
-    expect { registry.tool(:read_product, resource: :products, permissions: ["products.read"], definition: definition, handler: "Example::Operations") }.to raise_error(ArgumentError, /Duplicate tool/)
+  it "automatically includes every built-in and no generic capability tools" do
+    expect(SolidusMcp.registry.tools.size).to eq(12)
+    expect(SolidusMcp.registry.tools.keys).to include("bulk_update_variant_prices", "search_orders")
+    expect(SolidusMcp.registry.tools.keys).not_to include("list_capabilities", "describe_resource")
   end
 
-  it "fails closed for tools with missing or unknown permissions" do
-    expect { registry.tool(:read_product, resource: :products, permissions: [], definition: definition, handler: "Example::Operations") }.to raise_error(ArgumentError, /needs permissions/)
-    expect { registry.tool(:read_product, resource: :products, permissions: ["products.destroy"], definition: definition, handler: "Example::Operations") }.to raise_error(ArgumentError, /Unknown permission/)
+  it "rejects duplicate names and permission reuse" do
+    registry = described_class.new
+    registry.register SolidusMcp::Tools::GetProduct
+    expect { registry.register SolidusMcp::Tools::GetProduct }.to raise_error(ArgumentError, /Duplicate/)
+    klass = Class.new(SolidusMcp::Tools::GetProduct) { tool_name :another_product_tool }
+    stub_const("AnotherProductTool", klass)
+    expect { registry.register klass }.to raise_error(ArgumentError, /unique/)
   end
 
-  it "seals the registry and its input schemas" do
-    registry.tool(:read_product, resource: :products, permissions: ["products.read"], definition: definition, handler: "Example::Operations")
-    registry.seal!
-    expect { registry.tools.delete("read_product") }.to raise_error(FrozenError)
-    expect { registry.tools["read_product"].input_schema[:properties][:id][:type].replace("string") }.to raise_error(FrozenError)
-    expect(definition[:properties][:id][:type]).to eq("integer")
-  end
-
-  it "does not automatically grant a newly registered permission" do
-    registry.resource(:orders, model: "Spree::Order", label: "Orders", actions: {cancel: :update})
-    registry.tool(:cancel_order, resource: :orders, permissions: ["orders.cancel"], definition: definition, handler: "Example::Operations")
-    admin = create_user
-    application = Doorkeeper::Application.create!(name: "Test", redirect_uri: "https://client.example/callback")
-    token = Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "catalog:read", expires_in: 3600)
-    policy = SolidusMcp::Policy.new(TestCatalog::Credential.new(token, admin), registry: registry)
-    expect(policy.allowed?(registry.tools["cancel_order"])).to eq(false)
+  it "freezes schemas and catalog metadata" do
+    tool = SolidusMcp.registry.tools.fetch("get_product")
+    expect { tool.input_schema[:properties]["product_id"][:type].replace("string") }.to raise_error(FrozenError)
+    expect { SolidusMcp.registry.tools.clear }.to raise_error(FrozenError)
   end
 end
