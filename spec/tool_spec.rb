@@ -26,10 +26,12 @@ RSpec.describe "Custom tools and gem upgrades" do
   end
 
   it "adds a custom tool without replacing built-ins and uses the same authorization" do
+    original_tools = SolidusMcp.registry.tools.keys
     stub_const("StoreLookup", custom_class)
     SolidusMcp.configuration.custom_tools = ["StoreLookup"]
     SolidusMcp.rebuild_registry!
-    expect(SolidusMcp.registry.tools.size).to eq(13)
+    expected_tools = original_tools + ["custom_lookup"]
+    expect(SolidusMcp.registry.tools.keys).to match_array(expected_tools)
     expect { StoreLookup.execute(credential: credential) }.to raise_error(SolidusMcp::AccessDenied)
     grant(application: application, user: user, permissions: ["custom_lookup"])
     expect(StoreLookup.execute(credential: credential)).to eq(custom: true)

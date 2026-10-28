@@ -2,6 +2,10 @@
 
 ## 0.2.0 (unreleased)
 
+- Add draft product creation with an overridable shipping-category default,
+  record-level authorization, and structured MCP results.
+- Isolate test caches so registration throttles do not leak between suite runs.
+
 - Make the self-contained engine the canonical implementation; retire the
   unpublished host registry API and compatibility instructions.
 - Offer explicit read/write access review on the consent screen for clients
@@ -10,7 +14,7 @@
 - Add audited permission-set deletion, a deleted-sets view and explicit restoration.
 
 - Replace resource/operation maps with an automatically registered catalog of
-  twelve built-in tools and additive custom tool classes.
+  thirteen built-in tools and additive custom tool classes.
 - Add standard product, pricing, inventory-read and order-read implementations
   with explicit serializers and record authorization.
 - Add per-entry bulk pricing using normal Solidus validation and row locks.

@@ -10,6 +10,7 @@ RSpec.configure do |config|
   config.infer_spec_type_from_file_location!
   config.include TestCatalog::Helpers
   config.before do
+    Rails.cache.clear
     SolidusMcp.configuration.custom_tools = []
     SolidusMcp.rebuild_registry!
   end
