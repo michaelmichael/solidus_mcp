@@ -44,6 +44,20 @@ RSpec.describe "Engine MCP endpoint", type: :request do
     expect(payload.dig("result", "structuredContent", "id")).to eq(product.id)
   end
 
+  it "creates a draft product and returns its identity over MCP" do
+    grant(application: application, user: user, permissions: ["create_product"])
+    shipping = Spree::ShippingCategory.create!(name: "Default")
+    expect {
+      rpc("tools/call", {name: "create_product", arguments: {name: "MCP draft", price: 12.5, shipping_category_id: shipping.id}})
+    }.to change { Spree::Product.count }.by(1)
+    expect(response).to have_http_status(:ok)
+    product = Spree::Product.last
+    expect(payload.dig("result", "structuredContent")).to eq("product_id" => product.id, "created" => true)
+    expect(product.name).to eq("MCP draft")
+    expect(product.available_on).to be_nil
+    expect(product.master.price).to eq(BigDecimal("12.50"))
+  end
+
   it "returns standard step-up challenges only for enabled tools" do
     bearer
     token.update!(scopes: "mcp:read")

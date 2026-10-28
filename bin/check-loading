@@ -5,7 +5,8 @@ require "open3"
 root = File.expand_path("..", __dir__)
 program = <<~RUBY
   require_relative "spec/dummy/config/environment"
-  raise "Wrong catalog" unless SolidusMcp.registry.tools.size == 13
+  expected_names = SolidusMcp::BUILTIN_TOOLS.map { |name| name.constantize.registration.fetch(:tool_name).to_s } + ["loading_probe"]
+  raise "Wrong catalog" unless SolidusMcp.registry.tools.keys.sort == expected_names.sort
   raise "Missing custom tool" unless SolidusMcp.registry.tools.key?("loading_probe")
   if Rails.env.development?
     previous = LoadingProbe
@@ -13,7 +14,7 @@ program = <<~RUBY
     Rails.application.reloader.reload!
     raise "Custom class did not reload" if previous.equal?(LoadingProbe)
     raise "Built-in class did not reload" if previous_builtin.equal?(SolidusMcp::Tools::GetProduct)
-    raise "Catalog changed" unless SolidusMcp.registry.tools.size == 13
+    raise "Catalog changed" unless SolidusMcp.registry.tools.keys.sort == expected_names.sort
   else
     raise "Eager loading disabled" unless Rails.application.config.eager_load
   end

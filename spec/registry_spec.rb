@@ -4,9 +4,10 @@ require "spec_helper"
 
 RSpec.describe SolidusMcp::Registry do
   it "automatically includes every built-in and no generic capability tools" do
-    expect(SolidusMcp.registry.tools.size).to eq(12)
-    expect(SolidusMcp.registry.tools.keys).to include("bulk_update_variant_prices", "search_orders")
-    expect(SolidusMcp.registry.tools.keys).not_to include("list_capabilities", "describe_resource")
+    builtin_tools = SolidusMcp::BUILTIN_TOOLS.map { |t| t.constantize.registration[:tool_name].to_s }
+    registry_tools = SolidusMcp.registry.tools.keys
+    expect(registry_tools).to match_array(builtin_tools)
+    expect(registry_tools).not_to include("list_capabilities", "describe_resource")
   end
 
   it "rejects duplicate names and permission reuse" do

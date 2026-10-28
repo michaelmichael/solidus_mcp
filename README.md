@@ -93,7 +93,7 @@ Without SolidusAdmin, a trusted host administrative process can use
 
 | Category | Tools |
 | --- | --- |
-| Products | `search_products`, `get_product`, `get_product_variants`, `update_product` |
+| Products | `search_products`, `get_product`, `get_product_variants`, `create_product`, `update_product` |
 | Pricing | `get_variant_prices`, `update_variant_price`, `bulk_update_variant_prices` |
 | Inventory | `get_inventory_levels`, `search_inventory` |
 | Orders | `search_orders`, `get_order`, `get_order_status` |
@@ -104,6 +104,23 @@ Categories are admin labels, not MCP resources. Searches have bounded keyset
 pagination (`after_id`, `limit`, maximum 100). Order detail includes at most 100
 authorized line items and indicates truncation; payment credentials and customer
 contact details are not serialized.
+
+`create_product` creates an unavailable draft with required `name` and numeric
+`price` (zero or greater). Supply `shipping_category_id`, or configure a store
+default in the initializer:
+
+```ruby
+SolidusMcp.configure do |config|
+  category_id = ENV["MCP_DEFAULT_SHIPPING_CATEGORY_ID"].presence
+  config.default_shipping_category_id = Integer(category_id) if category_id
+end
+```
+
+The explicit ID takes precedence; a missing or nonexistent category fails without
+creating a product. The tool checks Solidus creation permissions against the new
+product before saving and returns `{product_id: ..., created: true}`. Enable the
+`create_product` connection permission and authorize `mcp:write` to expose it.
+Additional variants and inventory are outside this tool's scope.
 
 `update_product` accepts only `name`, `description`, `meta_title`,
 `meta_description` and `meta_keywords`. It uses Solidus validation and checks

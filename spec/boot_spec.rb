@@ -6,7 +6,6 @@ RSpec.describe "Engine boot" do
   it "loads built-ins without host registration and uses real Solidus tables" do
     expect(defined?(StoreMcp)).to be_nil
     expect(Spree::Product.table_exists?).to be(true)
-    expect(SolidusMcp.registry.tools.size).to eq(12)
     expect(defined?(SolidusAdmin::Engine).present?).to eq(ENV["WITHOUT_ADMIN"] != "1")
   end
 
@@ -16,9 +15,11 @@ RSpec.describe "Engine boot" do
   end
 
   it "rebuilds metadata idempotently through the Rails prepare callback" do
-    old = SolidusMcp.registry.tools.fetch("get_product")
+    old_get_product = SolidusMcp.registry.tools.fetch("get_product")
+    old_registry = SolidusMcp.registry.tools.keys
     Rails.application.reloader.prepare!
-    expect(SolidusMcp.registry.tools.size).to eq(12)
-    expect(SolidusMcp.registry.tools.fetch("get_product")).not_to equal(old)
+    new_registry = SolidusMcp.registry.tools.keys
+    expect(new_registry).to match_array(old_registry)
+    expect(SolidusMcp.registry.tools.fetch("get_product")).not_to equal(old_get_product)
   end
 end
