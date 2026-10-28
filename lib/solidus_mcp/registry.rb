@@ -1,84 +1,59 @@
 # frozen_string_literal: true
 
 module SolidusMcp
-  # Server-owned declarations only. Clients cannot resolve model or method names.
-  # A resource is a permission group; it is not an MCP protocol resource URI.
+  # A catalog of explicit tools, not business resources or arbitrary methods.
   class Registry
-    Permission = Struct.new(:key, :resource, :action, :model_name, :ability_action, keyword_init: true)
-    Resource = Struct.new(:key, :label, :model_name, :permissions, keyword_init: true)
-    Tool = Struct.new(:name, :resource, :permissions, :scopes, :description, :input_schema,
-      :read_only, :handler_name, :handler_method, keyword_init: true)
+    Entry = Struct.new(:name, :description, :category, :permission, :read_only,
+      :abilities, :input_schema, :class_name, keyword_init: true) do
+      def scopes
+        [read_only ? "mcp:read" : "mcp:write"]
+      end
 
-    attr_reader :resources, :permissions, :tools
+      def permissions
+        [permission]
+      end
+    end
+
+    attr_reader :tools
 
     def initialize
-      @resources = {}
-      @permissions = {}
       @tools = {}
     end
 
-    def resource(key, model:, label:, actions:)
-      key = identifier!(key)
-      raise ArgumentError, "Duplicate resource: #{key}" if resources.key?(key)
-      raise ArgumentError, "Model must be a class name" unless model.is_a?(String) && !model.empty?
-      raise ArgumentError, "Resource needs actions" if actions.empty?
-      model = model.dup.freeze
-
-      entries = actions.map do |action, ability_action|
-        action = identifier!(action)
-        permission = Permission.new(key: "#{key}.#{action}".freeze, resource: key, action: action,
-          model_name: model, ability_action: ability_action.to_sym).freeze
-        permissions[permission.key] = permission
-      end
-      resources[key] = Resource.new(key: key, label: label.to_s.dup.freeze, model_name: model, permissions: entries.freeze).freeze
-    end
-
-    def register(tool_class)
-      unless tool_class.is_a?(Class) && tool_class < SolidusMcp::Tool && tool_class.name.present?
+    def register(klass)
+      unless klass.is_a?(Class) && klass < SolidusMcp::Tool && klass.name.present?
         raise ArgumentError, "Expected a named SolidusMcp::Tool subclass"
       end
-      unless tool_class.public_instance_methods.include?(:call)
-        raise ArgumentError, "Tool must implement a public call method"
+      unless klass.protected_instance_methods.include?(:call)
+        raise ArgumentError, "Tool must implement a protected call method"
       end
-      attributes = tool_class.registration
-      tool(attributes.fetch(:name), **attributes.except(:name))
+      data = klass.registration
+      name = data.fetch(:tool_name).to_s
+      permission = data.fetch(:permission).to_s
+      raise ArgumentError, "Invalid tool name" unless name.match?(/\A[a-z][a-z0-9_]*\z/)
+      raise ArgumentError, "Invalid permission" unless permission.match?(/\A[a-z][a-z0-9_.]*\z/)
+      raise ArgumentError, "Duplicate tool: #{name}" if tools.key?(name)
+      raise ArgumentError, "Permission must be unique to this tool" if tools.values.any? { |tool| tool.permission == permission }
+      raise ArgumentError, "read_only must be a boolean" unless [true, false].include?(data.fetch(:read_only))
+      %i[description category].each { |key| raise ArgumentError, "Missing #{key}" if data.fetch(key).blank? }
+      raise ArgumentError, "Tool needs Solidus abilities" if data[:abilities].empty?
+      MCP::Tool::InputSchema.new(data[:input_schema])
+      entry = Entry.new(name: name, permission: permission, **data.slice(:description, :category,
+        :read_only, :abilities, :input_schema, :class_name))
+      entry.each_pair { |_, value| deep_freeze(value) }
+      tools[name] = entry.freeze
     end
 
-    def tool(name, resource:, permissions:, definition:, handler:, handler_method: name)
-      name = identifier!(name)
-      raise ArgumentError, "Reserved tool name: #{name}" if %w[list_capabilities describe_resource].include?(name)
-      raise ArgumentError, "Duplicate tool: #{name}" if tools.key?(name)
-      resource = resource.to_s
-      raise ArgumentError, "Unknown resource: #{resource}" unless resources.key?(resource)
-      keys = Array(permissions).map { |key| key.to_s.dup.freeze }
-      raise ArgumentError, "Tool needs permissions" if keys.empty?
-      keys.each { |key| self.permissions.fetch(key) { raise ArgumentError, "Unknown permission: #{key}" } }
-      scopes = Array(definition.fetch(:scope)).map { |scope| scope.to_s.dup.freeze }
-      raise ArgumentError, "Tool needs OAuth scopes" if scopes.empty?
-      raise ArgumentError, "read_only must be a boolean" unless [true, false].include?(definition.fetch(:read_only))
-      raise ArgumentError, "Handler must be a class name" unless handler.is_a?(String) && !handler.empty?
-
-      tools[name] = Tool.new(name: name, resource: resource, permissions: keys.freeze, scopes: scopes.freeze,
-        description: definition.fetch(:description).dup.freeze,
-        input_schema: deep_freeze(type: "object", properties: definition.fetch(:properties).deep_dup,
-          required: definition.fetch(:required).dup, additionalProperties: false),
-        read_only: definition.fetch(:read_only), handler_name: handler.dup.freeze, handler_method: identifier!(handler_method)).freeze
+    def permissions
+      tools.values.map(&:permission)
     end
 
     def seal!
-      resources.freeze
-      permissions.freeze
       tools.freeze
       freeze
     end
 
     private
-
-    def identifier!(value)
-      value = value.to_s
-      raise ArgumentError, "Invalid registry identifier" unless value.match?(/\A[a-z][a-z0-9_]*\z/)
-      value.freeze
-    end
 
     def deep_freeze(value)
       case value

@@ -1,9 +1,17 @@
 <div class="p-6">
-  <h1 class="text-2xl font-semibold mb-2">AI connections</h1>
+  <h1 class="text-2xl font-semibold mb-2"><%= @show_deleted ? "Deleted permission sets" : "AI connections" %></h1>
   <p class="mb-6">Choose what each assistant can do for the person who connected it. Permissions also remain limited by that person's store access and OAuth consent.</p>
 
+  <p class="mb-4">
+    <% if @show_deleted %>
+      <%= link_to "Active connections", solidus_admin.mcp_connections_path, class: "underline" %>
+    <% else %>
+      <%= link_to "Deleted permission sets", solidus_admin.mcp_connections_path(deleted: "1"), class: "underline" %>
+    <% end %>
+  </p>
+
   <table class="w-full text-left border-collapse">
-    <thead><tr><th class="p-3 border-b">Application</th><th class="p-3 border-b">Connected by</th><th class="p-3 border-b">Permissions</th><th class="p-3 border-b">Manage</th></tr></thead>
+    <thead><tr><th class="p-3 border-b">Application</th><th class="p-3 border-b">Connected by</th><th class="p-3 border-b">Authorization</th><th class="p-3 border-b">Permissions</th><th class="p-3 border-b">Manage</th></tr></thead>
     <tbody>
       <% @connections.each do |connection| %>
         <% application = @applications[connection.application_id]; user = @users[connection.resource_owner_id] %>
@@ -12,15 +20,16 @@
         <tr>
           <td class="p-3 border-b"><%= application.name %></td>
           <td class="p-3 border-b"><%= user.email %></td>
-          <td class="p-3 border-b"><%= policy ? (policy.enabled? ? "Custom permissions" : "Disabled") : "Default permissions" %></td>
-          <td class="p-3 border-b"><%= link_to "Edit permissions", solidus_admin.edit_mcp_connection_path(application, user_id: user.id), class: "underline" %></td>
+          <td class="p-3 border-b"><%= @active_connections.include?([application.id, user.id]) ? "Active token" : "No active token" %></td>
+          <td class="p-3 border-b"><%= policy ? (policy.deleted_at? ? "Deleted" : (policy.enabled? ? "Custom permissions" : "Disabled")) : "No tools enabled" %></td>
+          <td class="p-3 border-b"><%= link_to(@show_deleted ? "Review or restore" : "Edit permissions", solidus_admin.edit_mcp_connection_path(application, user_id: user.id), class: "underline") %></td>
         </tr>
       <% end %>
     </tbody>
   </table>
-  <% if @connections.empty? %><p class="mt-4">No assistants have connected yet. Connect an MCP client and complete OAuth authorization to see it here.</p><% end %>
+  <% if @connections.empty? %><p class="mt-4"><%= @show_deleted ? "No deleted permission sets." : "No active connections. Connect an MCP client or review deleted permission sets." %></p><% end %>
   <nav class="flex gap-4 mt-4" aria-label="Connections pages">
-    <% if @page > 1 %><%= link_to "Previous", solidus_admin.mcp_connections_path(page: @page - 1) %><% end %>
-    <% if @more %><%= link_to "Next", solidus_admin.mcp_connections_path(page: @page + 1) %><% end %>
+    <% if @page > 1 %><%= link_to "Previous", solidus_admin.mcp_connections_path(page: @page - 1, deleted: @show_deleted ? "1" : nil) %><% end %>
+    <% if @more %><%= link_to "Next", solidus_admin.mcp_connections_path(page: @page + 1, deleted: @show_deleted ? "1" : nil) %><% end %>
   </nav>
 </div>

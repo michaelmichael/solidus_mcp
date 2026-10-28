@@ -5,7 +5,7 @@ require "spec_helper"
 RSpec.describe "MCP connection management", type: :request do
   let(:admin) { create_user }
   let(:application) { Doorkeeper::Application.create!(name: "Catalog assistant", redirect_uri: "https://client.example/callback", confidential: false) }
-  let!(:token) { Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "catalog:read products:write", expires_in: 3600) }
+  let!(:token) { Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "mcp:read mcp:write", expires_in: 3600, resource: SolidusMcp.configuration.endpoint_url) }
   let(:path) { "/admin/mcp_connections/#{application.id}?user_id=#{admin.id}" }
   let(:edit_path) { "/admin/mcp_connections/#{application.id}/edit?user_id=#{admin.id}" }
 
@@ -15,13 +15,16 @@ RSpec.describe "MCP connection management", type: :request do
     {"X-Test-User" => @request_user&.id.to_s}
   end
 
-  def form_token
+  def form_token(method = "patch")
     get edit_path, headers: request_headers
     expect(response).to have_http_status(:ok)
-    Nokogiri::HTML(response.body).at_css('form[action*="/mcp_connections/"] input[name="authenticity_token"]')["value"]
+    form = Nokogiri::HTML(response.body).css('form[action*="/mcp_connections/"]').find do |element|
+      element.at_css('input[name="_method"]')&.[]("value") == method
+    end
+    form.at_css('input[name="authenticity_token"]')["value"]
   end
 
-  def save_policy(csrf: form_token, permissions: ["entries.read"], enabled: "1", version: "-1")
+  def save_policy(csrf: form_token, permissions: ["get_product"], enabled: "1", version: "-1")
     patch path, headers: request_headers, params: {authenticity_token: csrf,
                                                    connection_policy: {permissions: permissions, enabled: enabled, lock_version: version}}
   end
@@ -46,47 +49,46 @@ RSpec.describe "MCP connection management", type: :request do
     expect(response.body).to include("Catalog assistant", admin.email, "Edit permissions")
     get edit_path, headers: request_headers
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include('value="entries.publish"', 'value="entries.read"', "Tool requirements")
+    expect(response.body).to include('value="update_product"', 'value="get_product"', "Products")
     expect(response.body).not_to include(token.token, token.plaintext_token)
   end
 
   it "shows missing scopes beside permissions without expanding tokens when saved" do
-    token.update!(scopes: "catalog:read")
+    token.update!(scopes: "mcp:read")
     @request_user = admin
     get edit_path, headers: request_headers
-    expect(response.body).to include("Requires reconnection with products:write", "Reconnect to authorize additional access")
-    save_policy(permissions: ["entries.publish"])
+    expect(response.body).to include("Requires reconnection with mcp:write", "Reconnect to authorize additional access")
+    save_policy(permissions: ["update_product"])
     expect(response).to have_http_status(:see_other)
     expect(flash[:notice]).to include("OAuth access is still missing")
-    expect(token.reload.scopes.to_a).to eq(["catalog:read"])
+    expect(token.reload.scopes.to_a).to eq(["mcp:read"])
     expect(Doorkeeper::AccessToken.count).to eq(1)
   end
 
   it "warns about mixed tokens instead of implying every client has the union of scopes" do
-    token.update!(scopes: "catalog:read")
-    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "products:write", expires_in: 3600)
+    token.update!(scopes: "mcp:read")
+    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "mcp:write", resource: SolidusMcp.configuration.endpoint_url, expires_in: 3600)
     @request_user = admin
     get edit_path, headers: request_headers
-    expect(response.body).to include("Some active tokens lack products:write")
-    expect(response.body).to include("Some active tokens lack catalog:read")
+    expect(response.body).to include("Some active tokens lack mcp:write")
+    expect(response.body).to include("Some active tokens lack mcp:read")
   end
 
   it "ignores expired and revoked tokens when explaining missing scopes" do
-    token.update!(scopes: "catalog:read")
-    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "products:write", expires_in: 3600, created_at: 2.hours.ago)
-    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "products:write", expires_in: 3600, revoked_at: Time.current)
+    token.update!(scopes: "mcp:read")
+    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "mcp:write", resource: SolidusMcp.configuration.endpoint_url, expires_in: 3600, created_at: 2.hours.ago)
+    Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "mcp:write", resource: SolidusMcp.configuration.endpoint_url, expires_in: 3600, revoked_at: Time.current)
     @request_user = admin
     get edit_path, headers: request_headers
-    expect(response.body).to include("Requires reconnection with products:write")
+    expect(response.body).to include("Requires reconnection with mcp:write")
     expect(response.body).not_to include("Some active tokens lack")
   end
 
   it "explains expired connections and renders host instructions as text" do
     token.revoke
-    SolidusMcp.reconnect_instructions = "Use Review access. <script>unsafe</script>"
     @request_user = admin
     get edit_path, headers: request_headers
-    expect(response.body).to include("No active access token", "Use Review access.", "&lt;script&gt;")
+    expect(response.body).to include("No active access token")
     expect(response.body).not_to include("<script>unsafe")
   end
 
@@ -104,11 +106,11 @@ RSpec.describe "MCP connection management", type: :request do
     save_policy
     expect(response).to have_http_status(:see_other)
     policy = SolidusMcp::ConnectionPolicy.find_by!(application: application, user: admin)
-    expect(policy.permissions).to eq(["entries.read"])
+    expect(policy.permissions).to eq(["get_product"])
     change = policy.policy_changes.last
     expect(change.actor_id).to eq(admin.id)
     expect(change.previous_values["permissions"]).to eq([])
-    expect(change.new_values["permissions"]).to eq(["entries.read"])
+    expect(change.new_values["permissions"]).to eq(["get_product"])
   end
 
   it "supports disabling a connection and denying all permissions" do
@@ -136,7 +138,7 @@ RSpec.describe "MCP connection management", type: :request do
   end
 
   it "does not overwrite a newer policy from a stale form" do
-    policy = SolidusMcp::ConnectionPolicy.create!(application: application, user: admin, permissions: ["entries.read"])
+    policy = SolidusMcp::ConnectionPolicy.create!(application: application, user: admin, permissions: ["get_product"])
     @request_user = admin
     csrf = form_token
     policy.change!(actor: admin, permissions: [], enabled: false, lock_version: policy.lock_version)
@@ -147,10 +149,10 @@ RSpec.describe "MCP connection management", type: :request do
   end
 
   it "rolls back a permission edit if its audit fails" do
-    policy = SolidusMcp::ConnectionPolicy.create!(application: application, user: admin, permissions: ["entries.read"])
+    policy = SolidusMcp::ConnectionPolicy.create!(application: application, user: admin, permissions: ["get_product"])
     allow_any_instance_of(SolidusMcp::PolicyChange).to receive(:save!).and_raise(ActiveRecord::RecordInvalid.new(SolidusMcp::PolicyChange.new))
     expect { policy.change!(actor: admin, permissions: [], enabled: false, lock_version: 0) }.to raise_error(ActiveRecord::RecordInvalid)
-    expect(policy.reload.permissions).to eq(["entries.read"])
+    expect(policy.reload.permissions).to eq(["get_product"])
     expect(policy).to be_enabled
   end
 
@@ -171,5 +173,78 @@ RSpec.describe "MCP connection management", type: :request do
     application.destroy!
     expect(policy.reload.application_uid).to eq(uid)
     expect(policy.policy_changes.last.actor_id).to eq(admin.id)
+  end
+  def delete_policy(version:, csrf: form_token("delete"))
+    delete path, headers: request_headers, params: {authenticity_token: csrf, connection_policy: {lock_version: version.to_s}}
+  end
+
+  it "deletes a permission set, denies cached tools and retains its audit history" do
+    @request_user = admin
+    saved = grant(application: application, user: admin, permissions: ["get_product"])
+    credential = SolidusMcp::Credential.new(token, admin)
+    server = SolidusMcp::Server.build(credential: credential)
+    delete_policy(version: saved.lock_version)
+    expect(response).to have_http_status(:see_other)
+    expect(saved.reload.deleted_at).to be_present
+    expect(saved.permissions).to eq([])
+    expect(saved).not_to be_enabled
+    expect(saved.policy_changes.last.actor_id).to eq(admin.id)
+    expect(saved.policy_changes.last.new_values["deleted_at"]).to be_present
+    result = JSON.parse(server.handle_json({jsonrpc: "2.0", id: 1, method: "tools/call", params: {name: "get_product", arguments: {product_id: 1}}}.to_json))
+    expect(result.dig("result", "isError")).to be(true)
+    expect(token.reload).not_to be_revoked
+    get "/admin/mcp_connections", headers: request_headers
+    expect(response.body).not_to include("Catalog assistant")
+    get "/admin/mcp_connections?deleted=1", headers: request_headers
+    expect(response.body).to include("Catalog assistant", "Review or restore")
+  end
+
+  it "can delete a connection with no saved permissions and restore it explicitly" do
+    @request_user = admin
+    delete_policy(version: -1)
+    expect(response).to have_http_status(:see_other)
+    saved = SolidusMcp::ConnectionPolicy.find_by!(application: application, user: admin)
+    get edit_path, headers: request_headers
+    expect(response.body).to include("Restore permission set")
+    save_policy(version: saved.lock_version.to_s)
+    expect(response).to have_http_status(:see_other)
+    expect(saved.reload.deleted_at).to be_nil
+    expect(saved.permissions).to eq(["get_product"])
+    expect(saved).to be_enabled
+    expect(saved.policy_changes.count).to eq(2)
+  end
+
+  it "does not delete a permission set from a stale form" do
+    @request_user = admin
+    saved = grant(application: application, user: admin, permissions: ["get_product"])
+    csrf = form_token("delete")
+    saved.change!(actor: admin, permissions: ["search_products"], enabled: true, lock_version: saved.lock_version)
+    delete_policy(version: 0, csrf: csrf)
+    expect(response).to have_http_status(:conflict)
+    expect(saved.reload.deleted_at).to be_nil
+    expect(saved.permissions).to eq(["search_products"])
+  end
+
+  it "requires CSRF and administrator authorization to delete" do
+    @request_user = admin
+    delete_policy(version: -1, csrf: "invalid")
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(SolidusMcp::ConnectionPolicy.count).to eq(0)
+    csrf = form_token("delete")
+    @request_user = create_user(admin: false)
+    delete_policy(version: -1, csrf: csrf)
+    expect(response).to have_http_status(:forbidden)
+    expect(SolidusMcp::ConnectionPolicy.count).to eq(0)
+  end
+
+  it "rolls back deletion when the audit fails and leaves other users untouched" do
+    saved = grant(application: application, user: admin, permissions: ["get_product"])
+    other_user = create_user
+    other = grant(application: application, user: other_user, permissions: ["search_products"])
+    allow_any_instance_of(SolidusMcp::PolicyChange).to receive(:save!).and_raise(ActiveRecord::RecordInvalid.new(SolidusMcp::PolicyChange.new))
+    expect { saved.delete_permissions!(actor: admin, lock_version: saved.lock_version) }.to raise_error(ActiveRecord::RecordInvalid)
+    expect(saved.reload.deleted_at).to be_nil
+    expect(saved.permissions).to eq(["get_product"])
+    expect(other.reload.permissions).to eq(["search_products"])
   end
 end

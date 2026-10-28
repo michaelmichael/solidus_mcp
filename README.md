@@ -1,316 +1,269 @@
 # Solidus MCP
 
-A resource registry, connection permission controls, and capability discovery
-for MCP servers embedded in Solidus. This is the first implementation and is not yet published to RubyGems.
+A self-contained Rails engine for administering a Solidus store through MCP.
+The gem owns its standard tools, serializers, authorization, Streamable HTTP
+endpoint, OAuth integration and optional SolidusAdmin connection controls.
+No host-defined handlers or resource declarations are required.
 
-## What it provides
+## Supported environment
 
-- Explicit resources and named permissions such as `products.read`,
-  `products.update`, and `products.publish`.
-- A tool registry connecting schemas, OAuth scopes, required permissions and
-  fixed Ruby handlers.
-- Permissions for each OAuth application/user pair, retained across token
-  refreshes and checked during discovery and execution.
-- A SolidusAdmin **AI connections** screen, with connection disablement,
-  optimistic locking and transactional permission-change audits.
-- `list_capabilities` and `describe_resource`, generated from the caller's
-  permitted tools.
-- Solidus ability checks and helpers for authorizing records and scoping queries.
+The test matrix targets Ruby 3.2, Rails 8.0, Solidus 4.7, PostgreSQL 17,
+Doorkeeper 5.9 and MCP Ruby SDK 1.8.1. SolidusAdmin 0.4 is optional.
+Other Solidus versions and custom pricing-option implementations are not claimed
+as supported. The pricing tools explicitly reject custom pricing classes; those
+stores can register their own pricing tool.
 
-The host owns OAuth setup, the HTTP endpoint, business handlers and serializers.
-The engine does not expose ActiveRecord models or Ruby methods automatically.
-It uses the official Ruby MCP SDK for the protocol.
+## Initial installation
 
-## Current compatibility
+Add the gem at a tested immutable revision or release, install dependencies,
+and install Doorkeeper's standard tables if your application does not already
+have them (`bin/rails generate doorkeeper:install` and
+`bin/rails generate doorkeeper:migration`). Do not generate a second set of
+OAuth tables in an existing installation.
 
-The standalone test suite targets Solidus 4.7, SolidusAdmin 0.4 (optional),
-Rails 8.0, Ruby 3.2 and PostgreSQL 17, with Doorkeeper and the MCP Ruby SDK.
-PostgreSQL is required by the JSONB migration and the admin token-expiry query.
-The admin screen requires SolidusAdmin; the first version is for administrators.
-CI tests both admin-enabled and core-only installations. Other version combinations
-are not yet in the supported test matrix.
-
-## Install in a host application
-
-Install from GitHub (access to the private repository is currently required):
+Configure once in an initializer:
 
 ```ruby
-gem "solidus_mcp", git: "https://github.com/michaelmichael/solidus_mcp.git", branch: "main"
+SolidusMcp.configure do |config|
+  config.endpoint_url = ENV.fetch("SOLIDUS_MCP_ENDPOINT_URL") # https://store.example/mcp
+  config.issuer_url = ENV.fetch("SOLIDUS_MCP_ISSUER_URL")     # https://store.example
+  config.allowed_origins = ["https://your-browser-client.example"]
+  # Optional: class names only, never standard tool registrations.
+  config.custom_tools = ["MyStore::SpecialLookup"]
+end
+
+# Use only if this engine is configuring Doorkeeper for this application.
+SolidusMcp::Oauth.configure!
 ```
+
+Omit `custom_tools` if none are needed. For an application already using
+Doorkeeper, merge the settings from `SolidusMcp::Oauth.configure!` into its
+existing configuration once instead of configuring Doorkeeper twice. Preserve
+existing clients, secret-hashing behavior and resource columns. The required
+settings include authorization-code flow, S256 PKCE, hashed token/client secrets,
+refresh tokens, stable scopes and `custom_access_token_attributes [:resource]`.
+The engine does not silently replace application-wide OAuth configuration.
+
+The default resource-owner authentication uses Solidus's `:spree_user` Warden
+session and `/admin/login`. A store using different authentication can provide
+`config.resource_owner_authenticator = -> { ... }`; return the authenticated
+Solidus user or render/redirect. The returned user must be an administrator.
+Use a shared Rails cache store for registration rate limits in multi-process
+production installations.
+
+Mount the engine and expose issuer discovery before catch-all routes:
+
+```ruby
+mount SolidusMcp::Engine => "/mcp"
+get "/.well-known/oauth-authorization-server", to: "solidus_mcp/metadata#authorization_server"
+get "/.well-known/oauth-protected-resource/mcp", to: "solidus_mcp/metadata#resource"
+```
+
+These discovery examples assume a root issuer and `/mcp` endpoint. Adjust the
+well-known route paths once if choosing different canonical paths. The
+unauthorized endpoint also advertises its resource metadata URL in
+`WWW-Authenticate`. Metadata and OAuth URLs come from configured canonical URLs,
+never untrusted request headers. Keep the engine mount and configured endpoint
+consistent. Configure Rails host authorization as usual.
+
+Run host migrations first, then engine migrations:
 
 ```sh
-bundle install
-bin/rails solidus_mcp:install:migrations
 bin/rails db:migrate
+bin/rails solidus_mcp:migrate
 ```
 
-Configure Doorkeeper and an authenticated MCP endpoint in the host. The engine
-expects its default `oauth_applications` table and resource owners that are
-Solidus users. It adds routes to the existing SolidusAdmin engine:
-`/admin/mcp_connections` when that engine is mounted at `/admin`.
+The second command runs migration files directly from the installed gem with
+Rails' normal migration tracking and locking. Add it to the release process
+once. There is no need to copy engine migrations into the host repository on
+every release. Alternatively, conventional `solidus_mcp:install:migrations`
+remains available, but requires managing copied files.
 
-## Register a resource and tool
+Start the app, connect an OAuth client, then enable individual tools in
+SolidusAdmin **AI connections**. New connections have no tool permissions.
+Delete a permission set from its edit screen to clear all grants, disable access
+and move it out of the active list. Deleted permission sets retain their audit
+history and can be explicitly restored. Deletion does not revoke OAuth tokens
+or remove the client registration; execution stays denied until restored.
 
-Build and replace the registry in a `to_prepare` callback, so development reloads
-do not retain old handler classes. Class names below come from trusted code.
+Without SolidusAdmin, a trusted host administrative process can use
+`ConnectionPolicy#change!`; permission management is never an MCP tool.
+
+## Built-in tools
+
+| Category | Tools |
+| --- | --- |
+| Products | `search_products`, `get_product`, `get_product_variants`, `create_product`, `update_product` |
+| Pricing | `get_variant_prices`, `update_variant_price`, `bulk_update_variant_prices` |
+| Inventory | `get_inventory_levels`, `search_inventory` |
+| Orders | `search_orders`, `get_order`, `get_order_status` |
+
+All tools are registered automatically by the engine. `tools/list` returns the
+catalog permitted to the current credential, including exact input schemas.
+Categories are admin labels, not MCP resources. Searches have bounded keyset
+pagination (`after_id`, `limit`, maximum 100). Order detail includes at most 100
+authorized line items and indicates truncation; payment credentials and customer
+contact details are not serialized.
+
+`create_product` creates an unavailable draft with required `name` and numeric
+`price` (zero or greater). Supply `shipping_category_id`, or configure a store
+default in the initializer:
 
 ```ruby
-Rails.application.config.to_prepare do
-  registry = SolidusMcp::Registry.new
-  registry.resource :products,
-    model: "Spree::Product", label: "Products",
-    actions: {read: :read, publish: :update}
-
-  registry.tool :publish_product,
-    resource: :products,
-    permissions: ["products.publish"],
-    definition: {
-      scope: "mcp:write",
-      read_only: false,
-      description: "Publish a prepared product.",
-      properties: {product_id: {type: "integer", minimum: 1}},
-      required: ["product_id"]
-    },
-    handler: "MyStore::Operations"
-
-  SolidusMcp.registry = registry.seal!
+SolidusMcp.configure do |config|
+  category_id = ENV["MCP_DEFAULT_SHIPPING_CATEGORY_ID"].presence
+  config.default_shipping_category_id = Integer(category_id) if category_id
 end
 ```
 
-The handler must accept a credential in its constructor and implement the named
-method with keyword arguments. A credential provides `user`, `token`, `active?`
-and `permits?(oauth_scope)`. The token supplies `application_id`.
+The explicit ID takes precedence; a missing or nonexistent category fails without
+creating a product. The tool checks Solidus creation permissions against the new
+product before saving and returns `{product_id: ..., created: true}`. Enable the
+`create_product` connection permission and authorize `mcp:write` to expose it.
+Additional variants and inventory are outside this tool's scope.
 
-Build a protocol server for each authenticated request:
+`update_product` accepts only `name`, `description`, `meta_title`,
+`meta_description` and `meta_keywords`. It uses Solidus validation and checks
+both the existing and proposed record. There are no order or inventory mutations.
 
-```ruby
-server = SolidusMcp::Server.build(
-  credential: credential,
-  name: "my-store", version: "1.0.0",
-  instructions: "Store administration.",
-  errors: [MyStore::Operations::Error]
-)
-```
+Pricing inputs use decimal strings, explicit currency and explicit `country_iso`
+(`null` means the general-country row). The single tool takes `variant_id`;
+the bulk tool takes up to 100 entries with `sku`, `amount`, `currency` and
+`country_iso`. Both update an existing exact price row using normal Solidus
+validation and a row lock. They never create a price or silently fall back to
+another context. Amounts must fit Solidus's two-decimal price column.
 
-Use the SDK's Streamable HTTP transport to serve it. The host is responsible for
-token validation, resource audience, origin validation and OAuth consent.
+Bulk results preserve entry order and include `index`, `sku`, `success`, and
+`price` or `error`. Business failures are isolated per entry. Duplicate targets,
+missing/ambiguous SKUs and missing/ambiguous price contexts fail explicitly.
+Malformed request structure is rejected before execution. There is no preview,
+approval, automatic retry or all-or-nothing bulk transaction.
 
-## One class per tool
+## Authorization
 
-The class interface keeps a tool's metadata, inputs and implementation together.
-The existing `registry.tool` handler interface remains supported. For example,
-place this class in `app/tools/my_store/products/publish.rb`:
+Every invocation requires an active, audience-bound credential, an enabled
+connection, the tool's unique permission, its OAuth scope, the user's Solidus
+abilities and authorization for each accessed record. Connection policies are
+keyed by OAuth application and user, so token refresh retains grants. Permission
+changes and connection disablement are checked at execution, including cached
+SDK tool objects. Bulk execution rechecks authorization for each entry and again
+inside its price lock. Already committed changes are not undone by a later
+permission revocation.
+
+Scopes are independent:
+
+- `mcp:read` authorizes enabled read tools.
+- `mcp:write` authorizes enabled write tools.
+
+Clients wanting both can request both. For clients without scope controls, the
+consent page provides **Need additional access?**: select the desired access,
+click **Review access**, then review and **Authorize**. Extra access is unchecked
+unless requested. Reviewing issues no code or token and preserves the client's
+state, callback, resource and PKCE challenge. Only scopes allowed by the client
+registration are offered; read-only registrations cannot be upgraded here.
+The consent summary displays the selected scopes; write is never silently added
+to a read-only request. Client registration's permitted scopes are a ceiling,
+not a grant. A write-only token does not imply read scope.
+An administrator can enable a write permission on a read-only connection, but
+it remains ineffective and the UI explains the missing OAuth authorization.
+
+A permitted tool blocked only by token scope receives HTTP 403 with the standard
+`insufficient_scope` challenge. Clients that support step-up authorization can
+start another OAuth flow; otherwise reconnect through the client requesting the
+needed scopes. Token refresh cannot increase access. Disabling a tool requires
+an admin change, not another consent flow. Refresh client discovery after grants
+change; stateless transport does not push catalog-change notifications.
+
+Permissions are unique per tool. New tools never inherit another tool's grant.
+If a tool's behavior expands beyond its existing permission's meaning, release
+it with a new permission key. Retired permission keys must not be reused for
+unrelated capabilities. Unknown historical keys remain inert and audit history
+is retained. Administrators cannot add arbitrary unknown keys.
+
+## Custom tools
+
+Put a named subclass in `app/tools/my_store/special_lookup.rb`:
 
 ```ruby
 module MyStore
-  module Products
-    class Publish < SolidusMcp::Tool
-      tool_name :publish_product
-      resource :products
-      permissions "products.publish"
-      scope "mcp:write"
-      description "Publish a prepared product."
-      read_only false
-      input :product_id, type: "integer", minimum: 1, required: true
+  class SpecialLookup < SolidusMcp::Tool
+    tool_name :special_lookup
+    description "Look up a store-specific product label."
+    category "Custom"
+    permission "my_store.special_lookup"
+    read_only true
+    ability :read, "Spree::Product"
+    input :product_id, type: "integer", minimum: 1, required: true
 
-      def call(product_id:)
-        authorize!
-        # Delegate to a host service that checks records and proposed changes,
-        # enforces business rules, and performs the transaction and audit.
-        MyStore::Operations.new(credential).publish_product(product_id: product_id)
-      end
+    protected
+
+    def call(product_id:)
+      product = policy.scope(Spree::Product).find(product_id)
+      policy.authorize_record!(:read, product)
+      {id: product.id, label: product.name}
     end
   end
 end
 ```
 
-Register it after declaring its resources:
+Register its class name in `config.custom_tools`. The engine adds custom tools
+to its standard catalog and rejects collisions. The shared `.execute` entry
+point enforces schema and authorization for MCP and direct Ruby callers:
 
 ```ruby
-Rails.application.config.to_prepare do
-  registry = SolidusMcp::Registry.new
-  registry.resource :products, model: "Spree::Product", label: "Products",
-    actions: {publish: :update}
-  registry.register MyStore::Products::Publish
-  SolidusMcp.registry = registry.seal!
-end
+MyStore::SpecialLookup.execute(credential: credential, product_id: 123)
 ```
 
-`input` accepts JSON Schema keywords; `required: true` adds the input to the
-object's required list. `scope` and `permissions` accept multiple strings.
-All tools must explicitly declare `read_only`, scopes and permissions. Tool
-classes must be named subclasses with a public `call` method. Registrations
-snapshot and freeze schemas, retain class names for Rails reloading, and pass
-through the same validation as `registry.tool`.
+Implement `call` as protected. Declare all class-level abilities and check all
+related records and proposed changes in the implementation. Collection scopes
+and explicit serializers are still the tool author's responsibility. Trusted
+custom Ruby code is not sandboxed. Class names and schemas are rebuilt in Rails'
+`to_prepare`; reloadable classes are not retained in a global registry.
 
-Each invocation gets a new handler with `credential` and `policy` accessors.
-The server always authorizes before calling the handler. Call `authorize!` at
-the start of `call` as well if the class is used directly by application code.
-This does not replace record checks: use `policy.scope` and
-`policy.authorize_record!` for records, related records and proposed changes.
+## Development baseline
 
-For an incremental migration, `SolidusMcp::Server.tools(credential:, errors: [])`
-returns policy-protected SDK tools plus the two capability tools. A host may
-combine them with existing tools in its own `MCP::Server`. Remove migrated tools
-from the old list to avoid duplicate names. Capability discovery only describes
-registry tools, and registry permissions do not protect any legacy tools left
-outside it. Prefer `SolidusMcp::Server.build` once all tools are registered.
+Version 0.2 is the canonical implementation. The earlier unpublished host
+registry and handlers are retired; their APIs and tool catalog are not supported.
+Use this engine's built-in tools and custom-tool API for all new work. Hosts
+should mount the engine directly and remove duplicate MCP controllers, handlers,
+serializers and registry configuration. There is no compatibility mode.
 
-## Authorization contract
+Tool permission keys and read/write consent are explicit. Newly added tools
+start disabled. Standard tool additions and changes belong in this repository;
+the host only supplies configuration and any genuinely store-specific tools.
 
-A tool requires an active credential, all its OAuth scopes, all its connection
-permissions and the user's corresponding Solidus abilities. A permission's
-`actions` value maps it to an ability, e.g. `publish: :update` checks
-`Spree::Ability#can?(:update, Spree::Product)`.
+## Releases without Store API commits
 
-Class checks only determine which tools may be offered. Handlers must use
-`Policy#scope(model)` for collections and `Policy#authorize_record!(action,
-record)` for individual records, related records, and proposed create/update
-values. Handlers must explicitly declare all resources their output includes.
-The engine does not infer authorization for business side effects, callbacks or
-serialized associations. Mutation handlers remain responsible for transactions,
-business invariants, audits, concurrency guards and idempotency.
+The application still embeds the engine: a release needs a new application image
+and process restart. It does not need a Store API source commit for each gem
+release after a one-time build integration.
 
-For services callable outside the protocol, call `Policy#authorize!` at the
-service entry point too. The small example handlers in `spec/support/test_catalog.rb` demonstrate
-this contract; real stores provide their own business operations.
+Allow the build to select an immutable MCP commit/release outside the Store API
+repository. Resolve only that dependency in a disposable build workspace, retain
+the resulting lockfile with the artifact, and reject unrelated dependency changes
+unless explicitly reviewed. An environment-variable Git ref alone is insufficient:
+the existing frozen lockfile must also be deliberately updated during the build,
+and the resulting lockfile must not be overwritten by a later Docker `COPY`.
 
-Every new installation defaults to **no connection permissions**. Once a user
-has connected, an administrator can enable registered permissions through the
-admin screen. A host migrating an existing server can explicitly set
-`SolidusMcp.default_permissions` to a fixed list of existing permission keys.
-Do not derive that list from the registry: doing so grants future additions.
-Saved policies always override defaults, including an empty permission list.
+Record the Store API commit, MCP commit, resolved lockfile and image digest. Run
+the gem suite plus focused host boot/OAuth/tool/migration checks before promotion.
+Use broader store tests when dependencies or schema changes warrant them. Roll
+back the image using its recorded inputs; migrations must remain compatible with
+the previous image during rolling deploys. Production never follows a moving
+branch or updates a running bundle. This repository does not trigger deployment
+or change Store API's build configuration automatically.
 
-Saving the first policy snapshots the selected permissions. A newly registered
-permission is denied until deliberately granted; a new tool using an existing
-permission inherits that permission's meaning. OAuth scopes remain an additional
-ceiling, so checking a box cannot expand an existing token's scopes.
-
-Administration requires a browser session, CSRF protection, the Solidus ability
-to manage `:mcp_connections`, and an administrator account. Permission management
-is never registered as an MCP tool. Policy edits and their actor-attributed
-audits share a database transaction. Tokens and secrets are not shown in the UI.
-Policies retain the application's UID and actor/user IDs so deleting an OAuth
-registration does not delete its permission-change history.
-
-## Broad OAuth consent and tool permissions
-
-For hosts that want tool changes without repeated OAuth consent, use stable
-`mcp:read` and `mcp:write` scopes and keep individual permissions in the registry.
-New permissions remain disabled until an administrator enables them. Write
-consent must clearly cover write tools enabled later. Read-to-write upgrades
-still require a new authorization request and explicit consent.
-
-The host owns OAuth discovery, registration and consent. Default authorization
-to read-only, allow write only through consent, and validate requested scopes
-against the client's registration. Checking an AI connection permission never
-changes a token's scope ceiling. Refresh the client's tools after permission
-changes; execution rechecks permissions even if a client caches its listing.
-
-For a host migrating existing narrow scopes, configure explicit one-way
-implications and use the same helper in its credential:
-
-```ruby
-SolidusMcp.scope_implications = {
-  "mcp:read" => %w[catalog:read sales:read].freeze,
-  "mcp:write" => %w[mcp:read products:write prices:write inventory:write].freeze
-}.freeze
-
-# In the host credential:
-def permits?(scope)
-  SolidusMcp::OauthScopes.permits?(token.scopes.to_a, scope)
-end
-```
-
-New tool classes can declare `scope "mcp:read"` or `scope "mcp:write"`. Existing
-tool declarations may retain their narrow requirements during migration: broad
-tokens cover them, while legacy tokens keep their original limits. Do not infer
-implications from the registry or map narrow grants back to broad write access.
-Without configuration the helper uses exact scope matching. Empty scopes grant
-nothing. Implications are also used by admin connection warnings, with each
-active token assessed separately; complementary tokens are never combined.
-
-Keep legacy scopes accepted for existing clients and refresh grants. Do not
-silently widen tokens or client registrations. Clients registered with only old
-scopes need an explicit registration update or new registration and one consent
-flow to adopt broad scopes. New registrations also need their own connection
-permissions. Migrating previously unregistered tools into the registry requires
-administrators to grant their new permissions; do not enable them automatically.
-
-## OAuth scopes and reconnecting
-
-A tool still requires both consent and connection permissions. The admin screen
-warns when active tokens lack its required scopes, but cannot initiate the
-client's PKCE authorization flow itself. Configure host-specific instructions:
-
-```ruby
-SolidusMcp.reconnect_instructions =
-  "Reconnect from your client to upgrade from read to write. On the store " \
-  "consent screen, select write access, review the permissions, then Authorize."
-```
-
-Hosts can offer a scope chooser on the consent page when clients have no scope
-setting. Keep additional scopes unchecked, restrict choices to the registration,
-preserve state, callback, resource and PKCE challenge, and show the revised
-consent before issuing a code. Do not ask users to edit OAuth URLs. A token
-refresh cannot increase scopes. Mixed active tokens may retain warnings until
-the older tokens expire or are revoked.
-
-## First-release boundaries
-
-This version provides resource/operation controls for explicitly registered
-handlers. Field restrictions are the fixed input schemas and serializers defined
-by the host; per-connection field selection, reusable role profiles, generic CRUD
-adapters, and a separate approval workflow are not implemented. Deletes are
-available only if a host deliberately implements and registers them. A preview
-is a business-handler feature, not proof of human approval.
-
-Store-specific ownership rules, pricing rules and custom fields belong in the
-host adapter.
-
-## Development and verification
-
-The extension directory is self-contained: it includes its own Gemfile, minimal
-Rails test application, specs, Docker setup and GitHub Actions workflow. It does
-not load a parent repository, its environment files, or store credentials.
-
-With Docker, from this directory:
+## Local development
 
 ```sh
 docker compose run --rm test
 docker compose down
 ```
 
-PostgreSQL data is temporary; the bundle cache is kept in a separate named volume.
-The default command installs dependencies, migrates a blank test database, runs
-the specs and Ruby style checks, and builds the gem.
-
-With Ruby 3.2 and PostgreSQL 17 installed:
-
-```sh
-export DATABASE_URL=postgresql://postgres:postgres@localhost:5432/solidus_mcp_test
-bin/ci
-```
-
-Use a disposable database. The dummy app only boots in `test` and creates fixture
-users, catalog entries, standard Doorkeeper tables, and the engine's real policy
-and audit tables. It uses Solidus's real ability system, the MCP SDK, and the
-engine's real admin controller and forms. Its test-only header authentication
-and simplified page layout are fixtures, not a store authentication recipe.
-Full store OAuth transport and browser/layout tests belong in host applications.
-
-To check the optional-admin boundary locally:
-
-```sh
-WITHOUT_ADMIN=1 bundle install
-WITHOUT_ADMIN=1 bundle exec rspec --exclude-pattern 'spec/requests/**/*_spec.rb'
-```
-
-The standalone workflow is `.github/workflows/ci.yml`. While embedded in the
-store repository, a root workflow runs the same checks from this directory.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the test and release process.
-
-## License
-
-BSD 3-Clause. See [LICENSE](LICENSE).
+`bin/ci` migrates a disposable database using the real Solidus migrations, runs
+specs, verifies actual development reloading and production eager loading, checks
+Ruby style, and builds the gem. The test application contains only fixture users
+and configuration, never Store API handlers or production credentials. Its
+non-test modes require the explicit loading-check flag and are not deployable.
+CI also tests a core-only install with `WITHOUT_ADMIN=1`. Run the same checks
+locally before pushing; GitHub CI is final verification, not the development loop.

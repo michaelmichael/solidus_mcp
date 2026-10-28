@@ -7,3 +7,7 @@
 /spec/dummy/log/
 /spec/dummy/tmp/
 /spec/dummy/db/schema.rb
+
+/local-test.yml
+/tmp-*.log
+/.local-check/

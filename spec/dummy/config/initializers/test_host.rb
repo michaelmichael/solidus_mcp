@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
 Spree.user_class = "TestUser"
-Doorkeeper.configure do
-  orm :active_record
-  resource_owner_authenticator { nil }
-  default_scopes :"catalog:read"
-  optional_scopes :"products:write"
+SolidusMcp.configure do |config|
+  config.custom_tools = ["LoadingProbe"] if ENV["MCP_LOADING_CHECK"] == "1"
+  config.endpoint_url = "https://www.example.com/mcp"
+  config.issuer_url = "https://www.example.com"
+  config.resource_owner_authenticator = -> { TestUser.find_by(id: request.headers["X-Test-User"]) }
 end
+SolidusMcp::Oauth.configure!
 
 Rails.application.config.to_prepare do
   # Customer permissions query store orders; this host only has fixture models.

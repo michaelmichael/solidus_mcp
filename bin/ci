@@ -3,5 +3,6 @@ set -eu
 bundle install
 bundle exec rake db:create db:migrate
 bundle exec rspec
+bundle exec ruby bin/check-loading
 bundle exec standardrb
 bundle exec ruby -S gem build solidus_mcp.gemspec
