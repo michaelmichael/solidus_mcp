@@ -3,6 +3,7 @@
 Spree.user_class = "TestUser"
 SolidusMcp.configure do |config|
   config.custom_tools = ["LoadingProbe"] if ENV["MCP_LOADING_CHECK"] == "1"
+  config.product_serializer = "LoadingSerializer" if ENV["MCP_LOADING_CHECK"] == "1"
   config.endpoint_url = "https://www.example.com/mcp"
   config.issuer_url = "https://www.example.com"
   config.resource_owner_authenticator = -> { TestUser.find_by(id: request.headers["X-Test-User"]) }

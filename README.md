@@ -230,6 +230,97 @@ The built-in price update tools use Solidus's standard pricing options. Stores w
 
 Product and price updates take effect immediately. There are currently no built-in order or inventory mutation tools. Add your own, as desired.
 
+## Custom serializers
+
+You can change the product and order fields returned by the built-in tools without replacing those tools. Configure a serializer class in your initializer:
+
+```ruby
+config.product_serializer = 'Mcp::ProductSerializer'
+# config.order_serializer = 'Mcp::OrderSerializer'
+```
+
+Both settings are optional. Leave one unset to keep that record's default representation. Use class-name strings so Rails can reload your serializers in development.
+
+Each class implements `.call(record, context:)` and returns a JSON-compatible Ruby hash. For example, in `app/serializers/mcp/product_serializer.rb`:
+
+```ruby
+module Mcp
+  class ProductSerializer
+    def self.call(product, context:)
+      {
+        id: product.id,
+        name: product.name,
+        display_name: "#{product.name} (#{product.slug})"
+      }
+    end
+  end
+end
+```
+
+The returned hash replaces the default fields; it isn't merged with them. You choose which fields to include. The same interface works for orders.
+
+| Setting | Used by |
+| --- | --- |
+| `product_serializer` | `search_products` and `get_product` |
+| `order_serializer` | `search_orders` and `get_order` |
+
+Pagination stays under the tool's control. `get_order` still adds its authorized, bounded line items and truncation indicator, so order serializers cannot return `line_items` or `line_items_truncated`. Variants, prices, inventory, order status, and write responses keep their existing representations.
+
+### Using Alba or another library
+
+The hook accepts plain Ruby classes or adapters for your preferred serialization library. Add that library to your app's Gemfile; it is not a runtime dependency of Solidus MCP.
+
+For Alba, define `app/serializers/mcp/product_resource.rb`:
+
+```ruby
+module Mcp
+  class ProductResource
+    include Alba::Resource
+
+    attributes :id, :name, :slug
+  end
+end
+```
+
+Then use this adapter in `app/serializers/mcp/product_serializer.rb`:
+
+```ruby
+module Mcp
+  class ProductSerializer
+    def self.call(product, context:)
+      ProductResource.new(product, params: {policy: context}).to_h
+    end
+  end
+end
+```
+
+Return a hash, not an encoded JSON string. For another library, adapt its output to the same interface.
+
+### Authorization and field access
+
+The gem checks that the connected user can read the product or order before calling your serializer. If you include information from related records, your serializer must check access to those records as well. For example, a store may allow someone to read an order's totals while restricting access to its shipping address.
+
+For optional information, use `context.can?` to check access and omit the fields when the record is missing or access is denied:
+
+```ruby
+def self.call(order, context:)
+  result = {number: order.number}
+  address = order.ship_address
+  result[:shipping_city] = address.city if context.can?(:read, address)
+  result
+end
+```
+
+The order still comes back if the shipping address is inaccessible; it simply has no `shipping_city` field. Clients should not assume an omitted field means no related record exists. The check uses the store's existing Solidus abilities and returns `false` for a missing record.
+
+This does not create a separate MCP permission for addresses. An account with broad Solidus access will pass these record checks. Your store controls which fields its serializers expose.
+
+If a related record is essential to the response, use `context.authorize_record!(:read, record)` instead. It raises an access-denied error and fails the call when the record is missing or access is denied. Access to the primary product or order is always required.
+
+For related collections, use `context.scope(Model)` to return only records the connected user can read. These helpers do not automatically restrict the queries or associations you access elsewhere in the serializer.
+
+These hooks do not add field-level permissions. Serializer changes apply to existing connections with access to the affected tools. To expose sensitive information under a separate grant, use a custom tool with its own permission key. Serializers are trusted application code, just like custom tools.
+
 ## Custom tools
 
 To create your own custom MCP tools, add a named subclass of `SolidusMcp::Tool` under `app/tools`. For example, `app/tools/count_products.rb`:

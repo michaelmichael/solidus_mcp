@@ -5,6 +5,7 @@ module SolidusMcp
     engine_name "solidus_mcp"
 
     config.to_prepare do
+      SolidusMcp.configuration.validate_serializers!
       SolidusMcp.rebuild_registry!
     end
 
