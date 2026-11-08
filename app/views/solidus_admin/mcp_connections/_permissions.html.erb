@@ -1,0 +1,54 @@
+<solidus-mcp-permissions>
+  <div class="solidus-mcp-permissions-heading">
+    <h2 id="tool-permissions-heading">Tool permissions</h2>
+    <% if manage_connection_permissions? %>
+      <label data-selection-control hidden>
+        <input type="checkbox" data-select-all>
+        Select all permissions
+      </label>
+    <% end %>
+  </div>
+  <div class="solidus-mcp-permissions-scroll">
+    <table class="solidus-mcp-table" aria-labelledby="tool-permissions-heading">
+      <thead>
+        <tr>
+          <th scope="col">Permission</th>
+          <th scope="col">Description</th>
+          <th scope="col">Access</th>
+          <th scope="col">OAuth authorization</th>
+        </tr>
+      </thead>
+      <% @registry.tools.values.group_by(&:category).each do |category, tools| %>
+        <tbody data-permission-group>
+          <tr class="solidus-mcp-permissions-category">
+            <th scope="rowgroup" colspan="4">
+              <div class="solidus-mcp-permissions-group-heading">
+                <span><%= category %></span>
+                <% if manage_connection_permissions? %>
+                  <label data-selection-control hidden>
+                    <input type="checkbox" data-select-group aria-label="Select all <%= category %> permissions">
+                    Select all
+                  </label>
+                <% end %>
+              </div>
+            </th>
+          </tr>
+          <% tools.each do |tool| %>
+            <tr>
+              <th scope="row">
+                <label>
+                  <%= check_box_tag "connection_policy[permissions][]", tool.permission, @policy.permissions.include?(tool.permission), id: "permission_#{tool.name}", data: {permission: true}, disabled: !manage_connection_permissions? %>
+                  <span><%= tool.name.humanize %></span>
+                </label>
+              </th>
+              <td><%= tool.description %></td>
+              <td><%= tool.read_only ? "Read" : "Write" %></td>
+              <td><%= @scope_status.warning(tool) || "Authorized by active tokens" %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      <% end %>
+    </table>
+  </div>
+</solidus-mcp-permissions>
+<%= render "solidus_admin/mcp_connections/permission_selection" if manage_connection_permissions? %>

@@ -2,7 +2,21 @@
 
 if defined?(SolidusAdmin::Engine)
   SolidusAdmin::Engine.routes.draw do
-    resources :mcp_connections, only: [:index, :edit, :update, :destroy]
+    resources :mcp_administrators, only: [:index, :create, :update] do
+      get :search, on: :collection
+    end
+    resources :mcp_connections, only: [:index]
+    get "mcp_connections/:id/owners/:user_id/edit", to: "mcp_connections#edit", as: :edit_mcp_connection
+    patch "mcp_connections/:id/owners/:user_id", to: "mcp_connections#update", as: :mcp_connection
+    delete "mcp_connections/:id/owners/:user_id", to: "mcp_connections#destroy"
+
+    # Preserve links and forms from the earlier owner path.
+    get "mcp_connections/:id/users/:user_id/edit", to: "mcp_connections#edit", defaults: {legacy_owner_path: true}
+    patch "mcp_connections/:id/users/:user_id", to: "mcp_connections#update"
+    delete "mcp_connections/:id/users/:user_id", to: "mcp_connections#destroy"
+
+    # Existing bookmarks and open forms may still carry the user in the query string.
+    resources :mcp_connections, only: [:edit, :update, :destroy], as: :legacy_mcp_connections
   end
 end
 

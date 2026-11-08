@@ -8,9 +8,9 @@ module SolidusMcp
 
     wrap_parameters false
     before_action :prepare_registration
-    rate_limit to: 20, within: 1.hour, name: "per-ip", store: ActionController::Base.cache_store,
+    rate_limit to: 20, within: 1.hour, by: -> { "per-ip:#{request.remote_ip}" }, store: ActionController::Base.cache_store,
       with: -> { registration_throttled }
-    rate_limit to: 200, within: 1.hour, name: "global", by: -> { "all" }, store: ActionController::Base.cache_store,
+    rate_limit to: 200, within: 1.hour, by: -> { "global" }, store: ActionController::Base.cache_store,
       with: -> { registration_throttled }
 
     def create

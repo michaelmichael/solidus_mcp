@@ -16,9 +16,11 @@ Gem::Specification.new do |spec|
   }
   spec.license = "BSD-3-Clause"
   spec.required_ruby_version = ">= 3.2"
-  spec.files = Dir.chdir(__dir__) { Dir["{app,config,db,lib}/**/*", "README.md", "CHANGELOG.md", "LICENSE"].select { |path| File.file?(path) } }
+  spec.files = Dir.chdir(__dir__) { Dir["{app,config,db,docs,lib}/**/*", "README.md", "CHANGELOG.md", "CONTRIBUTING.md", "LICENSE"].select { |path| File.file?(path) } }
   spec.require_paths = ["lib"]
   spec.add_dependency "solidus_core", "~> 4.7.0"
   spec.add_dependency "mcp", "~> 1.8.1"
   spec.add_dependency "doorkeeper", "~> 5.9"
+  spec.add_dependency "railties", ">= 7.2", "< 8.1"
+  spec.add_dependency "activerecord", ">= 7.2", "< 8.1"
 end

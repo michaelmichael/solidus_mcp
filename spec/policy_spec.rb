@@ -47,6 +47,13 @@ RSpec.describe SolidusMcp::Policy do
     expect(policy.allowed?(read_tool)).to be(false)
   end
 
+  it "allows an MCP user to run granted tools without permission-management privileges" do
+    SolidusMcp.configuration.superadmin_emails.delete(user.email.downcase)
+    grant(application: application, user: user, permissions: ["get_product"])
+    expect(policy.allowed?(read_tool)).to be(true)
+    expect(policy.allowed?(write_tool)).to be(false)
+  end
+
   it "checks current permissions even on a reused policy" do
     saved = grant(application: application, user: user)
     expect(policy.allowed?(read_tool)).to be(true)

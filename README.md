@@ -1,269 +1,355 @@
 # Solidus MCP
 
-A self-contained Rails engine for administering a Solidus store through MCP.
-The gem owns its standard tools, serializers, authorization, Streamable HTTP
-endpoint, OAuth integration and optional SolidusAdmin connection controls.
-No host-defined handlers or resource declarations are required.
+## Overview
 
-## Supported environment
+Solidus MCP provides an MCP server for managing and administering Solidus storefronts.
 
-The test matrix targets Ruby 3.2, Rails 8.0, Solidus 4.7, PostgreSQL 17,
-Doorkeeper 5.9 and MCP Ruby SDK 1.8.1. SolidusAdmin 0.4 is optional.
-Other Solidus versions and custom pricing-option implementations are not claimed
-as supported. The pricing tools explicitly reject custom pricing classes; those
-stores can register their own pricing tool.
+It comes with a set of built-in tools to get you started. Connected agents can look up products and orders, update pricing, and check inventory.
 
-## Initial installation
+With Solidus, customization is king, so you aren't limited to the built-in tools. You can add your own MCP tools to support your specific store and workflows.
 
-Add the gem at a tested immutable revision or release, install dependencies,
-and install Doorkeeper's standard tables if your application does not already
-have them (`bin/rails generate doorkeeper:install` and
-`bin/rails generate doorkeeper:migration`). Do not generate a second set of
-OAuth tables in an existing installation.
+The default install runs inside your store. It provides the MCP server and OAuth integration with Doorkeeper.
 
-Configure once in an initializer:
+A permission system allows for granular control. Any Solidus admin can connect to the MCP server, but has no access to tools by default. MCP admins can grant and revoke tool access for ordinary MCP users. Only superadministrators can manage privileged connections or elevate users to MCP administrators.
+
+Superadministrators are designated through server-side configuration, outside the store’s user interface. This lets you delegate MCP permission management without giving administrators the ability to promote themselves or others.
+
+## Requirements
+
+Solidus MCP requires Ruby 3.2 or newer and Rails 7.2 or 8.0. Both Rails versions are tested with Ruby 3.2, Solidus 4.7, PostgreSQL 17, Doorkeeper 5.9, and MCP Ruby SDK 1.8.1.
+
+Solidus Admin 0.4 integration allows users to administer accounts and permissions in the default Solidus Admin interface. It is optional; the MCP server can run without it, but you'll need to manage connection grants through trusted application code.
+
+## Installation
+
+These instructions assume you already have a working Solidus application. If your store already uses Doorkeeper, read [Integrating with existing Doorkeeper](#integrating-with-existing-doorkeeper) before configuring OAuth.
+
+### 1. Install the gem
+
+Add the gem to your `Gemfile`:
+
+```ruby
+gem 'solidus_mcp', '0.2.0.rc1'
+```
+
+Then run:
+
+```sh
+bundle install
+```
+
+This is a release candidate. Keep `Gemfile.lock` under version control so deployments use the reviewed dependency versions.
+
+### 2. Generate the Doorkeeper migration
+
+The gem installs Doorkeeper for OAuth, but it does not automatically install its database tables:
+
+```sh
+bin/rails generate doorkeeper:migration
+```
+
+Skip this command if your app already has the standard Doorkeeper tables or a pending migration to create them. You don't need `doorkeeper:install` for a fresh setup: the initializer below supplies the OAuth configuration, and the engine supplies the routes.
+
+### 3. Set environment variables
+
+For local testing:
+
+```dotenv
+SOLIDUS_MCP_ENDPOINT_URL=http://localhost:3000/mcp
+SOLIDUS_MCP_ISSUER_URL=http://localhost:3000
+SOLIDUS_MCP_SUPERADMIN_EMAILS=owner@example.com
+```
+
+For a deployed store, use your public HTTPS URLs instead:
+
+```dotenv
+SOLIDUS_MCP_ENDPOINT_URL=https://www.mystore.com/mcp
+SOLIDUS_MCP_ISSUER_URL=https://www.mystore.com
+SOLIDUS_MCP_SUPERADMIN_EMAILS=owner@example.com,security@example.com
+```
+
+The endpoint URL must match the mount path you'll add to `config/routes.rb`. The issuer is the base URL of the app hosting the server.
+
+Superadministrator emails must match existing Solidus admin accounts. The gem reads this variable automatically. The two URL variables are read by the initializer in the next step.
+
+### 4. Create the initializer
+
+Create `config/initializers/solidus_mcp.rb`:
 
 ```ruby
 SolidusMcp.configure do |config|
-  config.endpoint_url = ENV.fetch("SOLIDUS_MCP_ENDPOINT_URL") # https://store.example/mcp
-  config.issuer_url = ENV.fetch("SOLIDUS_MCP_ISSUER_URL")     # https://store.example
-  config.allowed_origins = ["https://your-browser-client.example"]
-  # Optional: class names only, never standard tool registrations.
-  config.custom_tools = ["MyStore::SpecialLookup"]
+  config.endpoint_url = ENV.fetch('SOLIDUS_MCP_ENDPOINT_URL')
+  config.issuer_url = ENV.fetch('SOLIDUS_MCP_ISSUER_URL')
+  config.allowed_origins = []
 end
 
-# Use only if this engine is configuring Doorkeeper for this application.
 SolidusMcp::Oauth.configure!
 ```
 
-Omit `custom_tools` if none are needed. For an application already using
-Doorkeeper, merge the settings from `SolidusMcp::Oauth.configure!` into its
-existing configuration once instead of configuring Doorkeeper twice. Preserve
-existing clients, secret-hashing behavior and resource columns. The required
-settings include authorization-code flow, S256 PKCE, hashed token/client secrets,
-refresh tokens, stable scopes and `custom_access_token_attributes [:resource]`.
-The engine does not silently replace application-wide OAuth configuration.
-
-The default resource-owner authentication uses Solidus's `:spree_user` Warden
-session and `/admin/login`. A store using different authentication can provide
-`config.resource_owner_authenticator = -> { ... }`; return the authenticated
-Solidus user or render/redirect. The returned user must be an administrator.
-Use a shared Rails cache store for registration rate limits in multi-process
-production installations.
-
-Mount the engine and expose issuer discovery before catch-all routes:
+An empty `allowed_origins` list works for clients that send no `Origin` header. For browser clients, add the exact origins they use, including the scheme and port. For example, a local MCP Inspector may need:
 
 ```ruby
-mount SolidusMcp::Engine => "/mcp"
-get "/.well-known/oauth-authorization-server", to: "solidus_mcp/metadata#authorization_server"
-get "/.well-known/oauth-protected-resource/mcp", to: "solidus_mcp/metadata#resource"
+config.allowed_origins = ['http://localhost:6274', 'http://127.0.0.1:6274']
 ```
 
-These discovery examples assume a root issuer and `/mcp` endpoint. Adjust the
-well-known route paths once if choosing different canonical paths. The
-unauthorized endpoint also advertises its resource metadata URL in
-`WWW-Authenticate`. Metadata and OAuth URLs come from configured canonical URLs,
-never untrusted request headers. Keep the engine mount and configured endpoint
-consistent. Configure Rails host authorization as usual.
+Use the origin from the actual request, not the address of the MCP endpoint. Requests carrying an unlisted origin return 403.
 
-Run host migrations first, then engine migrations:
+The default OAuth configuration authenticates through Solidus's `:spree_user` Warden scope and sends unauthenticated users to `/admin/login`. Stores with custom authentication can supply a `config.resource_owner_authenticator` block returning the signed-in Solidus user.
+
+MCP access still requires Solidus admin status.
+
+### 5. Add routes
+
+Add these routes to `config/routes.rb`, before your storefront mount or any catch-all routes:
+
+```ruby
+Rails.application.routes.draw do
+  mount SolidusMcp::Engine => '/mcp'
+  get '/.well-known/oauth-authorization-server',
+    to: 'solidus_mcp/metadata#authorization_server'
+  get '/.well-known/oauth-protected-resource/mcp',
+    to: 'solidus_mcp/metadata#resource'
+
+  # Your existing admin and storefront routes follow.
+end
+```
+
+Rails host authorization must also allow the hostname used to reach your app.
+
+### 6. Run migrations and restart
+
+With your environment variables loaded, run:
 
 ```sh
 bin/rails db:migrate
 bin/rails solidus_mcp:migrate
 ```
 
-The second command runs migration files directly from the installed gem with
-Rails' normal migration tracking and locking. Add it to the release process
-once. There is no need to copy engine migrations into the host repository on
-every release. Alternatively, conventional `solidus_mcp:install:migrations`
-remains available, but requires managing copied files.
+The first command runs your app's migrations, including the generated Doorkeeper migration. The second runs the gem's migrations directly from the installed gem. These add connection permissions and audits, OAuth resource and PKCE attributes, and MCP administrator assignments.
 
-Start the app, connect an OAuth client, then enable individual tools in
-SolidusAdmin **AI connections**. New connections have no tool permissions.
-Delete a permission set from its edit screen to clear all grants, disable access
-and move it out of the active list. Deleted permission sets retain their audit
-history and can be explicitly restored. Deletion does not revoke OAuth tokens
-or remove the client registration; execution stays denied until restored.
+### 7. Verify the endpoint
 
-Without SolidusAdmin, a trusted host administrative process can use
-`ConnectionPolicy#change!`; permission management is never an MCP tool.
+For a local server on port 3000:
+
+```sh
+curl -i http://localhost:3000/.well-known/oauth-authorization-server
+curl -i http://localhost:3000/.well-known/oauth-protected-resource/mcp
+curl -i http://localhost:3000/mcp
+```
+
+The discovery requests should return 200 with JSON describing the issuer, OAuth endpoints, resource URL, and supported scopes. The unauthenticated MCP request should return 401 with a `WWW-Authenticate` header pointing to resource metadata. That 401 is expected: the endpoint requires an OAuth token.
+
+## Connect a client
+
+Choose **Streamable HTTP** as the transport and enter your endpoint URL, such as `http://localhost:3000/mcp`.
+
+Use a client that supports OAuth discovery, dynamic client registration, and S256 PKCE. Follow its authorization flow, sign in with a Solidus admin account, and approve the requested scopes. Being signed into the store in a browser does not authenticate the MCP client; it needs its own OAuth token.
+
+The scopes are independent:
+
+- `mcp:read` allows read tools when the connection has permission for them.
+- `mcp:write` allows write tools when the connection has permission for them. It does not include read access.
+
+If the client initially requests only read access, review and request write access before testing write tools. An administrator granting a write permission cannot expand an existing token's scopes. Refreshing a token also cannot add scopes beyond its original authorization.
+
+## Enable tools
+
+New connections start with no tool permissions, including connections owned by superadministrators.
+
+1. Sign into Solidus Admin as a configured MCP superadministrator.
+2. Open **AI connections** and select the client's connection for the intended user.
+3. Enable a read tool, such as `search_products`, and save.
+4. Refresh the client's tool list or reconnect, then ask it to find a product in your store.
+
+The permission table lets you select individual tools, a whole category, or all permissions. Start with the tools the connection needs. Test writes against disposable data before granting access to live store changes.
+
+Permission changes apply on subsequent calls. Clients may cache their tool lists, so refresh discovery after changing grants. Disabling a connection blocks requests made with its existing tokens. Deleting a permission set disables it and retains its audit history; it does not delete the OAuth client or its tokens. To use it again, restore and enable it from **Deleted sets**.
+
+## Administration
+
+All three levels require a Solidus admin account:
+
+| Level | Can do |
+| --- | --- |
+| MCP user | Connect clients, use assigned tools, and view their own connections. |
+| MCP administrator | Manage ordinary MCP users' connection grants. Their own connections are read-only; other privileged users' connections are hidden. |
+| MCP superadministrator | Manage all connections, including their own, and assign or remove MCP administrators. |
+
+To assign an MCP administrator, open **AI connections → Manage MCP administrators** as a superadministrator. Search by login email, choose an existing Solidus admin, and assign access. The same screen lets you remove or restore assignments.
+
+These assignments belong to the gem. Adding a Solidus role named `mcp_admin` does not grant MCP administration rights. Removing an MCP administrator assignment removes management authority, but retains that user's existing connection tool grants.
+
+Every tool call must pass the connection grant, OAuth scope, and Solidus ability checks. Tools must also respect record-level access. Administration roles do not bypass these checks.
+
+The hierarchy depends on your store's account security. Restrict who can change privileged accounts' emails, reset their passwords, or impersonate them. Someone who can take over a superadministrator's account can act as that superadministrator.
+
+See [MCP administration hierarchy](docs/administration.md) for configuration details, audit behavior, and management APIs for stores without Solidus Admin.
+
+## Integrating with existing Doorkeeper
+
+Reuse your existing OAuth tables and initializer. Do not call `SolidusMcp::Oauth.configure!` on top of an existing configuration: Doorkeeper is application-wide, and that helper is intended for a fresh installation.
+
+Merge the MCP requirements into your existing configuration instead. Use [the helper's implementation](lib/solidus_mcp/oauth.rb) as a reference:
+
+- Authorize Solidus admin users through your existing login flow.
+- Support authorization-code grants, S256 PKCE, and refresh tokens.
+- Add `mcp:read` and `mcp:write` to your configured scopes and enforce configured scopes.
+- Include `:resource` in `custom_access_token_attributes`, preserving any other attributes.
+- Use token and application secret hashing, accounting for existing clients and stored credentials before changing those settings.
+- Allow literal loopback HTTP callbacks for local clients while requiring HTTPS for other callbacks.
+
+Run the engine migrations after your host migrations. They add the required resource and PKCE columns without removing existing columns. Mount the engine as shown above; keep routes for your other OAuth integrations in place.
+
+Check your existing integrations before deploying changes to shared OAuth settings. If you ran `doorkeeper:install` solely for this setup, review its generated initializer and routes so you don't configure Doorkeeper twice.
 
 ## Built-in tools
 
-| Category | Tools |
-| --- | --- |
-| Products | `search_products`, `get_product`, `get_product_variants`, `create_product`, `update_product` |
-| Pricing | `get_variant_prices`, `update_variant_price`, `bulk_update_variant_prices` |
-| Inventory | `get_inventory_levels`, `search_inventory` |
-| Orders | `search_orders`, `get_order`, `get_order_status` |
+| Category | Tool | Purpose |
+| --- | --- | --- |
+| Products | `search_products` | Search by product name or variant SKU. |
+| Products | `get_product` | Read product descriptions and supported attributes. |
+| Products | `get_product_variants` | List variants, including the master variant. |
+| Products | `create_product` | Create a draft product. |
+| Products | `update_product` | Update the name, description, and metadata fields. |
+| Pricing | `get_variant_prices` | Read prices with their currency and country context. |
+| Pricing | `update_variant_price` | Update an existing price row. |
+| Pricing | `bulk_update_variant_prices` | Update up to 100 prices by SKU. |
+| Inventory | `get_inventory_levels` | Read stock counts and backorderability by location. |
+| Inventory | `search_inventory` | Search stock levels by SKU or product name. |
+| Orders | `search_orders` | Search by order number, state, or store ID. |
+| Orders | `get_order` | Read totals, status, and up to 100 authorized line items. |
+| Orders | `get_order_status` | Read order, payment, and shipment states. |
 
-All tools are registered automatically by the engine. `tools/list` returns the
-catalog permitted to the current credential, including exact input schemas.
-Categories are admin labels, not MCP resources. Searches have bounded keyset
-pagination (`after_id`, `limit`, maximum 100). Order detail includes at most 100
-authorized line items and indicates truncation; payment credentials and customer
-contact details are not serialized.
+Your client discovers each tool's input schema. Paginated tools accept `after_id` and `limit`, with a default limit of 25 and maximum of 100. Pass `next_after_id` from a response as the next request's `after_id` until it is null. Order results exclude customer contact information by default.
 
-`create_product` creates an unavailable draft with required `name` and numeric
-`price` (zero or greater). Supply `shipping_category_id`, or configure a store
-default in the initializer:
+Product creation requires a valid `shipping_category_id`, supplied with the call or through `config.default_shipping_category_id` in your initializer.
 
-```ruby
-SolidusMcp.configure do |config|
-  category_id = ENV["MCP_DEFAULT_SHIPPING_CATEGORY_ID"].presence
-  config.default_shipping_category_id = Integer(category_id) if category_id
-end
-```
+Price updates require an existing price row, an explicit currency, and `country_iso` (`null` for general-country pricing). Supply decimal amounts as strings, such as `"19.95"`. Bulk updates report success or failure for each entry and can partially succeed. Review the results and retry only failed entries as appropriate.
 
-The explicit ID takes precedence; a missing or nonexistent category fails without
-creating a product. The tool checks Solidus creation permissions against the new
-product before saving and returns `{product_id: ..., created: true}`. Enable the
-`create_product` connection permission and authorize `mcp:write` to expose it.
-Additional variants and inventory are outside this tool's scope.
+The built-in price update tools use Solidus's standard pricing options. Stores with a custom `pricing_options_class` need a store-specific pricing tool.
 
-`update_product` accepts only `name`, `description`, `meta_title`,
-`meta_description` and `meta_keywords`. It uses Solidus validation and checks
-both the existing and proposed record. There are no order or inventory mutations.
-
-Pricing inputs use decimal strings, explicit currency and explicit `country_iso`
-(`null` means the general-country row). The single tool takes `variant_id`;
-the bulk tool takes up to 100 entries with `sku`, `amount`, `currency` and
-`country_iso`. Both update an existing exact price row using normal Solidus
-validation and a row lock. They never create a price or silently fall back to
-another context. Amounts must fit Solidus's two-decimal price column.
-
-Bulk results preserve entry order and include `index`, `sku`, `success`, and
-`price` or `error`. Business failures are isolated per entry. Duplicate targets,
-missing/ambiguous SKUs and missing/ambiguous price contexts fail explicitly.
-Malformed request structure is rejected before execution. There is no preview,
-approval, automatic retry or all-or-nothing bulk transaction.
-
-## Authorization
-
-Every invocation requires an active, audience-bound credential, an enabled
-connection, the tool's unique permission, its OAuth scope, the user's Solidus
-abilities and authorization for each accessed record. Connection policies are
-keyed by OAuth application and user, so token refresh retains grants. Permission
-changes and connection disablement are checked at execution, including cached
-SDK tool objects. Bulk execution rechecks authorization for each entry and again
-inside its price lock. Already committed changes are not undone by a later
-permission revocation.
-
-Scopes are independent:
-
-- `mcp:read` authorizes enabled read tools.
-- `mcp:write` authorizes enabled write tools.
-
-Clients wanting both can request both. For clients without scope controls, the
-consent page provides **Need additional access?**: select the desired access,
-click **Review access**, then review and **Authorize**. Extra access is unchecked
-unless requested. Reviewing issues no code or token and preserves the client's
-state, callback, resource and PKCE challenge. Only scopes allowed by the client
-registration are offered; read-only registrations cannot be upgraded here.
-The consent summary displays the selected scopes; write is never silently added
-to a read-only request. Client registration's permitted scopes are a ceiling,
-not a grant. A write-only token does not imply read scope.
-An administrator can enable a write permission on a read-only connection, but
-it remains ineffective and the UI explains the missing OAuth authorization.
-
-A permitted tool blocked only by token scope receives HTTP 403 with the standard
-`insufficient_scope` challenge. Clients that support step-up authorization can
-start another OAuth flow; otherwise reconnect through the client requesting the
-needed scopes. Token refresh cannot increase access. Disabling a tool requires
-an admin change, not another consent flow. Refresh client discovery after grants
-change; stateless transport does not push catalog-change notifications.
-
-Permissions are unique per tool. New tools never inherit another tool's grant.
-If a tool's behavior expands beyond its existing permission's meaning, release
-it with a new permission key. Retired permission keys must not be reused for
-unrelated capabilities. Unknown historical keys remain inert and audit history
-is retained. Administrators cannot add arbitrary unknown keys.
+Product and price updates take effect immediately. There are currently no built-in order or inventory mutation tools. Add your own, as desired.
 
 ## Custom tools
 
-Put a named subclass in `app/tools/my_store/special_lookup.rb`:
+To create your own custom MCP tools, add a named subclass of `SolidusMcp::Tool` under `app/tools`. For example, `app/tools/count_products.rb`:
 
 ```ruby
-module MyStore
-  class SpecialLookup < SolidusMcp::Tool
-    tool_name :special_lookup
-    description "Look up a store-specific product label."
-    category "Custom"
-    permission "my_store.special_lookup"
-    read_only true
-    ability :read, "Spree::Product"
-    input :product_id, type: "integer", minimum: 1, required: true
+class CountProducts < SolidusMcp::Tool
+  tool_name :count_products
+  description 'Count products visible to the connected user.'
+  category 'Products'
+  permission 'count_products'
+  read_only true
+  ability :read, 'Spree::Product'
 
-    protected
+  protected
 
-    def call(product_id:)
-      product = policy.scope(Spree::Product).find(product_id)
-      policy.authorize_record!(:read, product)
-      {id: product.id, label: product.name}
-    end
+  def call
+    { count: policy.scope(Spree::Product).count }
   end
 end
 ```
 
-Register its class name in `config.custom_tools`. The engine adds custom tools
-to its standard catalog and rejects collisions. The shared `.execute` entry
-point enforces schema and authorization for MCP and direct Ruby callers:
+Register its class name in your initializer:
 
 ```ruby
-MyStore::SpecialLookup.execute(credential: credential, product_id: 123)
+config.custom_tools = ['CountProducts']
 ```
 
-Implement `call` as protected. Declare all class-level abilities and check all
-related records and proposed changes in the implementation. Collection scopes
-and explicit serializers are still the tool author's responsibility. Trusted
-custom Ruby code is not sandboxed. Class names and schemas are rebuilt in Rails'
-`to_prepare`; reloadable classes are not retained in a global registry.
+Built-in tools are registered automatically. Use class-name strings for custom tools so Rails can reload them in development. Each tool needs a unique tool name and permission key. The new tool appears in the permission table, but it still needs an explicit grant before a client can use it.
 
-## Development baseline
+### Tool declarations
 
-Version 0.2 is the canonical implementation. The earlier unpublished host
-registry and handlers are retired; their APIs and tool catalog are not supported.
-Use this engine's built-in tools and custom-tool API for all new work. Hosts
-should mount the engine directly and remove duplicate MCP controllers, handlers,
-serializers and registry configuration. There is no compatibility mode.
+These declarations form the gem's Ruby DSL for describing tools:
 
-Tool permission keys and read/write consent are explicit. Newly added tools
-start disabled. Standard tool additions and changes belong in this repository;
-the host only supplies configuration and any genuinely store-specific tools.
+| Declaration | Required? | Purpose |
+| --- | --- | --- |
+| `tool_name :count_products` | Yes | Name exposed to MCP clients. Must be unique, start with a lowercase letter, and contain only lowercase letters, numbers, and underscores. |
+| `description 'Count visible products.'` | Yes | Explains what the tool does to the connected agent. |
+| `category 'Products'` | Yes | Groups the tool in the permissions interface. |
+| `permission 'count_products'` | Yes | Unique key used for permission grants. Accepts the same characters as tool names, plus periods. |
+| `read_only true` | Yes | Use `true` for read tools requiring `mcp:read`, or `false` for write tools requiring `mcp:write`. This declaration does not itself prevent database writes. |
+| `ability :read, 'Spree::Product'` | At least one | Required Solidus ability. Repeat for additional abilities; all must pass. |
+| `input :query, type: 'string', required: true` | No | Declares an argument and its JSON Schema constraints. Repeat for each argument the tool accepts. |
 
-## Releases without Store API commits
+Declarations can be inherited from a parent tool class. Every tool also needs a protected `call` method containing its implementation.
 
-The application still embeds the engine: a release needs a new application image
-and process restart. It does not need a Store API source commit for each gem
-release after a one-time build integration.
+Inputs are optional unless you specify `required: true`. Other options describe the accepted value, such as `type`, `enum`, `minLength`, or `minimum`:
 
-Allow the build to select an immutable MCP commit/release outside the Store API
-repository. Resolve only that dependency in a disposable build workspace, retain
-the resulting lockfile with the artifact, and reject unrelated dependency changes
-unless explicitly reviewed. An environment-variable Git ref alone is insufficient:
-the existing frozen lockfile must also be deliberately updated during the build,
-and the resulting lockfile must not be overwritten by a later Docker `COPY`.
+```ruby
+input :query, type: 'string', minLength: 1, required: true
+input :limit, type: 'integer', minimum: 1, maximum: 100
+```
 
-Record the Store API commit, MCP commit, resolved lockfile and image digest. Run
-the gem suite plus focused host boot/OAuth/tool/migration checks before promotion.
-Use broader store tests when dependencies or schema changes warrant them. Roll
-back the image using its recorded inputs; migrations must remain compatible with
-the previous image during rolling deploys. Production never follows a moving
-branch or updates a running bundle. This repository does not trigger deployment
-or change Store API's build configuration automatically.
+Receive the arguments as keyword arguments in `call`, and put any defaults there:
 
-## Local development
+```ruby
+protected
+
+def call(query:, limit: 25)
+  # Your implementation here.
+end
+```
+
+Undeclared arguments are rejected. Use `policy.scope(Model, action)` for collections and `policy.authorize_record!(action, record)` for individual records. Serialize only the fields the client needs. For writes, preserve your store's validations and business rules and recheck authorization before committing changes. The [built-in tools](app/tools/solidus_mcp/tools) provide examples.
+
+If you call a tool from elsewhere in your Ruby app, such as a service, job, or another tool, use `.execute` with an authenticated MCP credential:
+
+```ruby
+CountProducts.execute(credential: credential)
+```
+
+This runs the same connection permission, OAuth scope, Solidus ability, and input checks used for MCP requests. MCP clients already go through these checks automatically.
+
+Inside the tool, your implementation is still responsible for record access and business rules. For example, `policy.scope(Spree::Product)` limits a query to products the connected user can access; `Spree::Product.all` does not. Declaring abilities does not automatically restrict queries or enforce your store's rules.
+
+### Changing existing tools
+
+Connection grants are stored by permission key. If you expand what a tool can access or change—for example, adding inventory adjustments to a tool that only reads stock levels—give it a new permission key. This requires administrators to explicitly approve the expanded access.
+
+For the same reason, don't assign a removed tool's permission key to a different tool. Existing connections may still hold that grant.
+
+## Troubleshooting
+
+| Problem | Check |
+| --- | --- |
+| Missing environment variable at startup | Confirm your launcher loads the variables. A `.env` file alone is not enough. |
+| Discovery returns 404 | Check that the routes are loaded and appear before storefront or catch-all routes. |
+| `unknown attribute 'resource' for Doorkeeper::AccessGrant`, missing PKCE columns, or missing administrator tables | Run `bin/rails solidus_mcp:migrate`, then restart the app to reload its schema. |
+| MCP endpoint returns 401 | Complete the client's OAuth flow. A browser login alone does not provide an MCP token. |
+| MCP endpoint returns 403 | Check the request's `Origin` against `allowed_origins`, and check whether the connection is disabled or its permission set was deleted. |
+| Connected, but no tools appear | Check tool grants, token scopes, and Solidus abilities, then refresh the client's tool list. |
+| A write tool is denied | Confirm both the tool grant and `mcp:write` consent. Reauthorize for additional scopes. |
+| No superadministrator access | Verify the configured login email and Solidus admin status. Restart the whole process after changing the environment. |
+| Own connection is read-only or administrator management is missing | Check your MCP administration level. Ordinary Solidus admin status does not grant MCP management rights. |
+| Port already in use | Check which process owns it. Rails and the local end of an SSH tunnel need separate listeners on their respective machines. |
+| HTTP URL rejected | HTTP endpoints are limited to loopback development and test use. HTTP OAuth callbacks require a literal loopback address. |
+
+## Deployment and upgrades
+
+Keep the gem revision and dependencies locked. During deployment, run host migrations followed by engine migrations, rebuild the app and its assets as needed, and restart the application processes. Use a shared Rails cache store so dynamic client registration rate limits apply across processes.
+
+When adopting the administration hierarchy, configure at least one superadministrator and deliberately assign any MCP administrators. Existing Solidus roles do not automatically confer MCP administration rights. Existing tokens and connection grants are retained.
+
+Review the [changelog](CHANGELOG.md) before upgrading and test the integration in your own store. Keep migrations compatible with the previous release where possible; application rollback should not automatically run down migrations.
+
+## Local development and contributing
+
+Run the checks with a disposable PostgreSQL database:
 
 ```sh
 docker compose run --rm test
-docker compose down
 ```
 
-`bin/ci` migrates a disposable database using the real Solidus migrations, runs
-specs, verifies actual development reloading and production eager loading, checks
-Ruby style, and builds the gem. The test application contains only fixture users
-and configuration, never Store API handlers or production credentials. Its
-non-test modes require the explicit loading-check flag and are not deployable.
-CI also tests a core-only install with `WITHOUT_ADMIN=1`. Run the same checks
-locally before pushing; GitHub CI is final verification, not the development loop.
+Or, with Ruby and a disposable `DATABASE_URL` configured locally:
+
+```sh
+RAILS_ENV=test bin/ci
+```
+
+The suite uses a fixture app; you don't need a separate store checkout or production credentials. See [CONTRIBUTING.md](CONTRIBUTING.md) for checks and release procedures.
+
+## License
+
+[BSD 3-Clause](LICENSE).

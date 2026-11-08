@@ -15,7 +15,7 @@ module SolidusMcp
             request.env["warden"]&.authenticate(scope: :spree_user)
           end
           if user
-            if user.admin?
+            if SolidusMcp::Administration.user?(user)
               user
             else
               head :forbidden

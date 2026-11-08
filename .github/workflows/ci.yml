@@ -14,15 +14,17 @@ concurrency:
 
 jobs:
   test:
-    name: Ruby 3.2 / Rails 8.0 / Solidus 4.7 (${{ matrix.mode }})
+    name: Ruby 3.2 / Rails ${{ matrix.rails }} / Solidus 4.7 (${{ matrix.mode }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
+        rails: ['7.2', '8.0']
         mode: [admin, core]
     env:
       RAILS_ENV: test
+      RAILS_VERSION: '~> ${{ matrix.rails }}.0'
       WITHOUT_ADMIN: ${{ matrix.mode == 'core' && '1' || '0' }}
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/solidus_mcp_test
     services:
@@ -43,7 +45,7 @@ jobs:
         with:
           ruby-version: '3.2'
           bundler-cache: true
-          cache-version: ${{ matrix.mode }}
+          cache-version: ${{ matrix.rails }}-${{ matrix.mode }}
       - name: Run migrations against a blank database
         run: bundle exec rake db:create db:migrate
       - name: Specs

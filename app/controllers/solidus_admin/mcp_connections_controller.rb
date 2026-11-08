@@ -2,14 +2,21 @@
 
 module SolidusAdmin
   class McpConnectionsController < BaseController
-    before_action :require_administrator
+    before_action :require_mcp_user
+    helper_method :mcp_administrator?, :mcp_superadministrator?, :manage_connection_permissions?, :can_manage_connection?
+
+    rescue_from SolidusMcp::AccessDenied do
+      head :forbidden
+    end
     before_action :load_connection, only: [:edit, :update, :destroy]
+    before_action :require_permission_manager, only: [:update, :destroy]
 
     def index
       @show_deleted = params[:deleted] == "1"
       @page = [params[:page].to_i, 1].max
-      @connections = Doorkeeper::AccessToken.where(resource: SolidusMcp.configuration.endpoint_url).where.not(application_id: nil).where.not(resource_owner_id: nil)
-        .where("#{@show_deleted ? "" : "NOT "}EXISTS (SELECT 1 FROM solidus_mcp_connection_policies p WHERE p.application_id = oauth_access_tokens.application_id AND p.user_id = oauth_access_tokens.resource_owner_id AND p.deleted_at IS NOT NULL)")
+      connections = Doorkeeper::AccessToken.where(resource: SolidusMcp.configuration.endpoint_url).where.not(application_id: nil).where.not(resource_owner_id: nil)
+      connections = SolidusMcp::Administration.visible_connections(connections, current_solidus_admin_user)
+      @connections = connections.where("#{@show_deleted ? "" : "NOT "}EXISTS (SELECT 1 FROM solidus_mcp_connection_policies p WHERE p.application_id = oauth_access_tokens.application_id AND p.user_id = oauth_access_tokens.resource_owner_id AND p.deleted_at IS NOT NULL)")
         .select(:application_id, :resource_owner_id).distinct.order(:application_id, :resource_owner_id)
         .offset((@page - 1) * 25).limit(26).to_a
       @more = @connections.size > 25
@@ -25,6 +32,11 @@ module SolidusAdmin
     end
 
     def edit
+      # GET forms in the admin navigation replace query parameters on submission.
+      # Keep the connection owner in the path before rendering those forms.
+      if !request.path_parameters.key?(:user_id) || request.path_parameters[:legacy_owner_path]
+        redirect_to solidus_admin.edit_mcp_connection_path(@application, user_id: @user.id), status: :see_other
+      end
     end
 
     def update
@@ -75,13 +87,37 @@ module SolidusAdmin
       :mcp_connections
     end
 
-    def require_administrator
-      head :forbidden unless current_solidus_admin_user&.admin?
+    def require_mcp_user
+      head :forbidden unless SolidusMcp::Administration.user?(current_solidus_admin_user)
+    end
+
+    def require_permission_manager
+      head :forbidden unless manage_connection_permissions?
+    end
+
+    def mcp_administrator?
+      @mcp_administrator ||= SolidusMcp::Administration.administrator?(current_solidus_admin_user)
+    end
+
+    def mcp_superadministrator?
+      SolidusMcp::Administration.superadmin?(current_solidus_admin_user)
+    end
+
+    def can_manage_connection?(owner)
+      SolidusMcp::Administration.can_manage?(current_solidus_admin_user, owner)
+    end
+
+    def manage_connection_permissions?
+      @can_manage_permissions
     end
 
     def load_connection
-      @application = Doorkeeper::Application.find(params[:id])
       @user = Spree.user_class.find(params.require(:user_id))
+      unless SolidusMcp::Administration.can_view?(current_solidus_admin_user, @user)
+        raise ActiveRecord::RecordNotFound
+      end
+      @application = Doorkeeper::Application.find(params[:id])
+      @can_manage_permissions = can_manage_connection?(@user)
       tokens = Doorkeeper::AccessToken.where(application_id: @application.id, resource_owner_id: @user.id, resource: SolidusMcp.configuration.endpoint_url)
       raise ActiveRecord::RecordNotFound unless tokens.exists?
       scope_sets = tokens.where(revoked_at: nil).where("expires_in IS NULL OR created_at + expires_in * interval '1 second' > ?", Time.current).pluck(:scopes)

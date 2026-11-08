@@ -11,3 +11,7 @@
 /local-test.yml
 /tmp-*.log
 /.local-check/
+
+# Local project planning
+/STEPS.md
+/nvim.log

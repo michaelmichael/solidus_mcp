@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Only the host contracts used by this engine; no store schema or production data.
-class CreateTestHost < ActiveRecord::Migration[8.0]
+class CreateTestHost < ActiveRecord::Migration[7.2]
   def change
     create_table :test_users do |t|
       t.string :email, null: false

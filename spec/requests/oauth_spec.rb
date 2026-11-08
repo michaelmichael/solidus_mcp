@@ -32,6 +32,14 @@ RSpec.describe "Engine OAuth", type: :request do
                                       resource: SolidusMcp.configuration.endpoint_url}.merge(overrides)
   end
 
+  it "allows MCP users to authorize connections without administration privileges" do
+    SolidusMcp.configuration.superadmin_emails.delete(user.email.downcase)
+    code = authorize
+    exchange(code)
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body)).to have_key("access_token")
+  end
+
   it "shows exactly the requested read and write consent sections" do
     consent
     expect(response).to have_http_status(:ok)

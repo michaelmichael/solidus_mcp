@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.2.0.rc1 (2026-11-08)
+
+First public release candidate. The earlier registry implementation was unpublished.
+
+- Support Rails 7.2 and 8.0 on Ruby 3.2 or newer, with explicit Rails component
+  dependencies and CI coverage for both Rails versions, with and without
+  Solidus Admin. Use Rails 7.2-compatible migrations and registration rate limits.
+
+- Add environment-designated MCP superadministrators and audited, gem-owned
+  MCP-admin assignments. MCP admins manage ordinary users' grants; only
+  superadministrators can assign admins or manage privileged connections.
+  Solidus role checkboxes do not grant MCP-admin authority. Run the new engine
+  migration and configure superadministrator login emails before deployment.
+  Add an accessible account-search dropdown for assigning and restoring admins.
+  See [MCP administration hierarchy](docs/administration.md).
 
 - Add draft product creation with an overridable shipping-category default,
   record-level authorization, and structured MCP results.
@@ -12,6 +26,9 @@
   without scope controls, preserving registration limits and PKCE.
 
 - Add audited permission-set deletion, a deleted-sets view and explicit restoration.
+- Bundle scoped admin styles and permission tables with category and global
+  selection controls, without requiring host Tailwind configuration. Preserve
+  connection owners during theme changes and highlight AI connections in navigation.
 
 - Replace resource/operation maps with an automatically registered catalog of
   thirteen built-in tools and additive custom tool classes.
@@ -28,7 +45,7 @@
   development/production loading checks.
 - Breaking: remove resource declarations, legacy handler registration, scope
   implications, default grants and redundant capability-discovery tools. See
-  README for installation and the immutable release workflow.
+  README for installation and upgrade instructions.
 
 ## 0.1.0
 

@@ -1,0 +1,284 @@
+.solidus-mcp-admin {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 1.5rem;
+  color: #222222;
+  line-height: 1.5;
+}
+
+.solidus-mcp-admin p {
+  margin: 0.75rem 0;
+}
+
+.solidus-mcp-admin h1,
+.solidus-mcp-admin h2 {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.solidus-mcp-admin .solidus-mcp-page-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+}
+
+.solidus-mcp-admin .solidus-mcp-connection-title {
+  margin: 1rem 0 0.5rem;
+  font-size: 1.25rem;
+}
+
+.solidus-mcp-admin h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.125rem;
+}
+
+.solidus-mcp-admin .solidus-mcp-intro {
+  margin-bottom: 1.5rem;
+}
+
+.solidus-mcp-admin a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.solidus-mcp-admin .solidus-mcp-connection-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  cursor: pointer;
+}
+
+.solidus-mcp-admin input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: #222222;
+}
+
+.solidus-mcp-admin .solidus-mcp-section,
+.solidus-mcp-admin .solidus-mcp-audit-heading {
+  margin-top: 2rem;
+}
+
+.solidus-mcp-admin .solidus-mcp-audit-entry {
+  margin-bottom: 0.75rem;
+}
+
+.solidus-mcp-admin summary {
+  cursor: pointer;
+}
+
+.solidus-mcp-admin .solidus-mcp-button {
+  display: inline-block;
+  box-sizing: border-box;
+  padding: 0.5rem 1rem;
+  border: 1px solid #757575;
+  border-radius: 0.25rem;
+  background: #ffffff;
+  color: #222222;
+  font: inherit;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.solidus-mcp-admin .solidus-mcp-button-primary {
+  background: #222222;
+  color: #ffffff;
+  border-color: #222222;
+}
+
+.solidus-mcp-admin .solidus-mcp-button:hover {
+  filter: brightness(0.95);
+}
+
+.solidus-mcp-admin :is(a, button, input, summary):focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+.solidus-mcp-admin .solidus-mcp-pagination {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+solidus-mcp-permissions {
+  display: block;
+  min-width: 0;
+  margin: 1.5rem 0;
+}
+
+.solidus-mcp-permissions-heading,
+.solidus-mcp-permissions-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+
+.solidus-mcp-permissions-heading {
+  margin-bottom: 1rem;
+}
+
+.solidus-mcp-permissions-heading h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.solidus-mcp-table-scroll,
+.solidus-mcp-permissions-scroll {
+  overflow-x: auto;
+  border: 1px solid #d8dad8;
+  border-radius: 0.5rem;
+}
+
+.solidus-mcp-admin .solidus-mcp-table {
+  width: 100%;
+  min-width: 48rem;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.solidus-mcp-admin .solidus-mcp-table th,
+.solidus-mcp-admin .solidus-mcp-table td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #d8dad8;
+  vertical-align: top;
+}
+
+.solidus-mcp-admin .solidus-mcp-table thead {
+  background: #f5f3f0;
+  font-size: 0.875rem;
+}
+
+.solidus-mcp-admin .solidus-mcp-table th {
+  font-weight: 600;
+  text-align: inherit;
+}
+
+.solidus-mcp-permissions-category {
+  background: #f5f3f0;
+}
+
+.solidus-mcp-admin .solidus-mcp-table tbody:last-child tr:last-child > * {
+  border-bottom: 0;
+}
+
+solidus-mcp-permissions th[scope="row"] {
+  min-width: 12rem;
+  font-weight: 600;
+}
+
+solidus-mcp-permissions td:nth-child(3) {
+  white-space: nowrap;
+}
+
+solidus-mcp-permissions label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+solidus-mcp-permissions [data-selection-control] {
+  align-items: center;
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+solidus-mcp-permissions [hidden] {
+  display: none;
+}
+
+
+.solidus-mcp-admin input[type="checkbox"]:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.solidus-mcp-admin .solidus-mcp-role-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+solidus-mcp-account-search {
+  display: block;
+  width: 28rem;
+  max-width: 100%;
+}
+
+solidus-mcp-account-search label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.solidus-mcp-account-field {
+  position: relative;
+}
+
+solidus-mcp-account-search input[type="search"] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid #757575;
+  border-radius: 0.25rem;
+  background: #ffffff;
+  color: #222222;
+  font: inherit;
+}
+
+solidus-mcp-account-search [role="listbox"] {
+  box-sizing: border-box;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 16rem;
+  overflow-y: auto;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  border: 1px solid #757575;
+  border-radius: 0.25rem;
+  background: #ffffff;
+  color: #222222;
+  list-style: none;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12);
+}
+
+solidus-mcp-account-search [role="option"] {
+  padding: 0.5rem;
+  border-radius: 0.125rem;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+solidus-mcp-account-search [role="option"]:hover,
+solidus-mcp-account-search [aria-selected="true"] {
+  background: #f5f3f0;
+}
+
+solidus-mcp-account-search small {
+  display: block;
+}
+
+.solidus-mcp-admin solidus-mcp-account-search [role="status"] {
+  margin: 0.375rem 0 0;
+  font-size: 0.875rem;
+}
+
+solidus-mcp-account-search [hidden] {
+  display: none;
+}
+
+.solidus-mcp-admin .solidus-mcp-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

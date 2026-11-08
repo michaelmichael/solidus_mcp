@@ -1,34 +1,47 @@
-<div class="p-6">
-  <h1 class="text-2xl font-semibold mb-2"><%= @show_deleted ? "Deleted permission sets" : "AI connections" %></h1>
-  <p class="mb-6">Choose what each assistant can do for the person who connected it. Permissions also remain limited by that person's store access and OAuth consent.</p>
+<%= stylesheet_link_tag "solidus_mcp/admin", "data-turbo-track": "reload" %>
+<div class="solidus-mcp-admin">
+  <h1 class="solidus-mcp-page-title"><%= @show_deleted ? "Deleted permission sets" : "AI connections" %></h1>
+  <p class="solidus-mcp-intro"><%= if mcp_superadministrator?
+      "You are an MCP superadministrator. Manage all connections and assign MCP administrators."
+    elsif mcp_administrator?
+      "You are an MCP administrator. Manage MCP users' connections; your own permissions require a superadministrator."
+    else
+      "You are an MCP user. Only your own connections are shown; an MCP administrator manages their permissions."
+    end %> Permissions also remain limited by the connection owner's store access and OAuth consent.</p>
 
-  <p class="mb-4">
+  <% if mcp_superadministrator? %>
+    <p><%= link_to "Manage MCP administrators", solidus_admin.mcp_administrators_path %></p>
+  <% end %>
+
+  <p class="solidus-mcp-notice">
     <% if @show_deleted %>
-      <%= link_to "Active connections", solidus_admin.mcp_connections_path, class: "underline" %>
+      <%= link_to "Active connections", solidus_admin.mcp_connections_path, class: "solidus-mcp-link" %>
     <% else %>
-      <%= link_to "Deleted permission sets", solidus_admin.mcp_connections_path(deleted: "1"), class: "underline" %>
+      <%= link_to "Deleted permission sets", solidus_admin.mcp_connections_path(deleted: "1"), class: "solidus-mcp-link" %>
     <% end %>
   </p>
 
-  <table class="w-full text-left border-collapse">
-    <thead><tr><th class="p-3 border-b">Application</th><th class="p-3 border-b">Connected by</th><th class="p-3 border-b">Authorization</th><th class="p-3 border-b">Permissions</th><th class="p-3 border-b">Manage</th></tr></thead>
-    <tbody>
-      <% @connections.each do |connection| %>
-        <% application = @applications[connection.application_id]; user = @users[connection.resource_owner_id] %>
-        <% next unless application && user %>
-        <% policy = @policies[[application.id, user.id]] %>
-        <tr>
-          <td class="p-3 border-b"><%= application.name %></td>
-          <td class="p-3 border-b"><%= user.email %></td>
-          <td class="p-3 border-b"><%= @active_connections.include?([application.id, user.id]) ? "Active token" : "No active token" %></td>
-          <td class="p-3 border-b"><%= policy ? (policy.deleted_at? ? "Deleted" : (policy.enabled? ? "Custom permissions" : "Disabled")) : "No tools enabled" %></td>
-          <td class="p-3 border-b"><%= link_to(@show_deleted ? "Review or restore" : "Edit permissions", solidus_admin.edit_mcp_connection_path(application, user_id: user.id), class: "underline") %></td>
-        </tr>
-      <% end %>
-    </tbody>
-  </table>
-  <% if @connections.empty? %><p class="mt-4"><%= @show_deleted ? "No deleted permission sets." : "No active connections. Connect an MCP client or review deleted permission sets." %></p><% end %>
-  <nav class="flex gap-4 mt-4" aria-label="Connections pages">
+  <div class="solidus-mcp-table-scroll">
+    <table class="solidus-mcp-table solidus-mcp-connections-table">
+      <thead><tr><th scope="col">Application</th><th scope="col">Connected by</th><th scope="col">Authorization</th><th scope="col">Permissions</th><th scope="col"><%= mcp_administrator? ? "Manage" : "View" %></th></tr></thead>
+      <tbody>
+        <% @connections.each do |connection| %>
+          <% application = @applications[connection.application_id]; user = @users[connection.resource_owner_id] %>
+          <% next unless application && user %>
+          <% policy = @policies[[application.id, user.id]] %>
+          <tr>
+            <td><%= application.name %></td>
+            <td><%= user.email %></td>
+            <td><%= @active_connections.include?([application.id, user.id]) ? "Active token" : "No active token" %></td>
+            <td><%= policy ? (policy.deleted_at? ? "Deleted" : (policy.enabled? ? "Custom permissions" : "Disabled")) : "No tools enabled" %></td>
+            <td><%= link_to(can_manage_connection?(user) ? (@show_deleted ? "Review or restore" : "Edit permissions") : "View permissions", solidus_admin.edit_mcp_connection_path(application, user_id: user.id), class: "solidus-mcp-link") %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+  <% if @connections.empty? %><p class="solidus-mcp-empty-state"><%= @show_deleted ? "No deleted permission sets." : "No active connections. Connect an MCP client or review deleted permission sets." %></p><% end %>
+  <nav class="solidus-mcp-pagination" aria-label="Connections pages">
     <% if @page > 1 %><%= link_to "Previous", solidus_admin.mcp_connections_path(page: @page - 1, deleted: @show_deleted ? "1" : nil) %><% end %>
     <% if @more %><%= link_to "Next", solidus_admin.mcp_connections_path(page: @page + 1, deleted: @show_deleted ? "1" : nil) %><% end %>
   </nav>

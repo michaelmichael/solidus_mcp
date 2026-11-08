@@ -17,6 +17,8 @@ module SolidusMcp
     # prevents an older form from restoring permissions another admin removed.
     def change!(actor:, permissions:, enabled:, lock_version:, deleted_at: nil)
       transaction do
+        Administration.lock_users!(actor, user)
+        Administration.authorize_management!(actor, owner: user)
         # -1 identifies the unsaved default policy. Version 0 must not let a
         # default-policy form overwrite someone else's first explicit policy.
         if new_record? != (lock_version == -1)
@@ -33,6 +35,7 @@ module SolidusMcp
     end
 
     def delete_permissions!(actor:, lock_version:)
+      Administration.authorize_management!(actor, owner: user, action: :destroy)
       change!(actor: actor, permissions: [], enabled: false, lock_version: lock_version, deleted_at: Time.current)
     end
 

@@ -1,58 +1,54 @@
-<div class="p-6">
-  <%= link_to "All AI connections", solidus_admin.mcp_connections_path, class: "underline" %>
-  <h1 class="text-2xl font-semibold mt-4 mb-2"><%= @application.name %></h1>
-  <p class="mb-2">Connected by <strong><%= @user.email %></strong></p>
-  <p class="mb-4">Changes apply to this person's connection, including refreshed tokens. An unchecked permission blocks every tool that needs it.</p>
-  <p class="mb-6">Scopes on active tokens (tokens may differ): <%= @scopes.presence&.join(", ") || "No unexpired access tokens. Reconnect or refresh to use this connection." %>. Enabling a permission here does not add scopes to an existing token.</p>
+<%= stylesheet_link_tag "solidus_mcp/admin", "data-turbo-track": "reload" %>
+<div class="solidus-mcp-admin">
+  <%= link_to "All AI connections", solidus_admin.mcp_connections_path, class: "solidus-mcp-link" %>
+  <h1 class="solidus-mcp-connection-title"><%= @application.name %></h1>
+  <p class="solidus-mcp-connected-by">Connected by <strong><%= @user.email %></strong></p>
+  <p class="solidus-mcp-notice">Changes apply to this person's connection, including refreshed tokens. An unchecked permission blocks every tool that needs it.</p>
+  <p class="solidus-mcp-intro">Scopes on active tokens (tokens may differ): <%= @scopes.presence&.join(", ") || "No unexpired access tokens. Reconnect or refresh to use this connection." %>. Enabling a permission here does not add scopes to an existing token.</p>
 
   <% if @policy.deleted_at? %>
-    <p class="mb-4">This permission set was deleted and access is disabled. To restore it, choose permissions, enable the connection, and select Restore permission set. OAuth scope limits still apply.</p>
+    <p class="solidus-mcp-notice">This permission set was deleted and access is disabled. <%= manage_connection_permissions? ? "To restore it, choose permissions, enable the connection, and select Restore permission set." : "Ask an MCP administrator to restore it." %> OAuth scope limits still apply.</p>
   <% end %>
 
-  <%= form_with url: solidus_admin.mcp_connection_path(@application, user_id: @user.id), method: :patch, local: true do %>
-    <%= hidden_field_tag "connection_policy[lock_version]", @policy.persisted? ? @policy.lock_version : -1 %>
-    <%= hidden_field_tag "connection_policy[enabled]", "0", id: nil %>
-    <label class="flex gap-2 mb-6">
-      <%= check_box_tag "connection_policy[enabled]", "1", @policy.enabled? %>
-      Connection enabled
-    </label>
-    <%= hidden_field_tag "connection_policy[permissions][]", "", id: nil %>
-    <% @registry.tools.values.group_by(&:category).each do |category, tools| %>
-      <fieldset class="mb-6">
-        <legend class="text-lg font-semibold"><%= category %></legend>
-        <% tools.each do |tool| %>
-          <div class="my-3">
-            <label><%= check_box_tag "connection_policy[permissions][]", tool.permission, @policy.permissions.include?(tool.permission), id: "permission_#{tool.name}" %> <%= tool.name.humanize %></label>
-            <p><%= tool.description %></p>
-            <p><%= tool.read_only ? "Read" : "Write" %> access: <%= @scope_status.warning(tool) || "Authorized by active tokens" %></p>
-          </div>
-        <% end %>
-      </fieldset>
+  <% if manage_connection_permissions? %>
+    <%= form_with url: solidus_admin.mcp_connection_path(@application, user_id: @user.id), method: :patch, local: true do %>
+      <%= hidden_field_tag "connection_policy[lock_version]", @policy.persisted? ? @policy.lock_version : -1 %>
+      <%= hidden_field_tag "connection_policy[enabled]", "0", id: nil %>
+      <label class="solidus-mcp-connection-toggle">
+        <%= check_box_tag "connection_policy[enabled]", "1", @policy.enabled? %>
+        Connection enabled
+      </label>
+      <%= hidden_field_tag "connection_policy[permissions][]", "", id: nil %>
+      <%= render "solidus_admin/mcp_connections/permissions" %>
+      <%= submit_tag(@policy.deleted_at? ? "Restore permission set" : "Save permissions", class: "solidus-mcp-button solidus-mcp-button-primary") %>
     <% end %>
-    <%= submit_tag(@policy.deleted_at? ? "Restore permission set" : "Save permissions", class: "mt-6 px-4 py-2 rounded bg-black text-white cursor-pointer") %>
+  <% else %>
+    <p class="solidus-mcp-notice"><%= mcp_administrator? ? "This is a privileged connection. An MCP superadministrator manages its permissions, including your own grants." : "You are an MCP user. An MCP administrator manages your tool permissions and connection access." %></p>
+    <p><strong>Connection status:</strong> <%= @policy.deleted_at? ? "Deleted" : (@policy.enabled? ? "Enabled" : "Disabled") %></p>
+    <%= render "solidus_admin/mcp_connections/permissions" %>
   <% end %>
 
-  <% unless @policy.deleted_at? %>
-    <section class="mt-8" aria-labelledby="delete-permissions-heading">
-      <h2 id="delete-permissions-heading" class="text-lg font-semibold">Delete permission set</h2>
-      <p class="my-3">Remove all tool permissions and disable this connection. The permission set moves to Deleted permission sets; its audit history is retained. Other users and OAuth client registrations are unaffected.</p>
+  <% if manage_connection_permissions? && !@policy.deleted_at? %>
+    <section class="solidus-mcp-section" aria-labelledby="delete-permissions-heading">
+      <h2 id="delete-permissions-heading">Delete permission set</h2>
+      <p>Remove all tool permissions and disable this connection. The permission set moves to Deleted permission sets; its audit history is retained. Other users and OAuth client registrations are unaffected.</p>
       <%= form_with url: solidus_admin.mcp_connection_path(@application, user_id: @user.id), method: :delete, local: true, data: {turbo_confirm: "Delete this permission set and disable its access?"} do %>
         <%= hidden_field_tag "connection_policy[lock_version]", @policy.persisted? ? @policy.lock_version : -1, id: nil %>
-        <%= submit_tag "Delete permission set", class: "px-4 py-2 rounded border cursor-pointer" %>
+        <%= submit_tag "Delete permission set", class: "solidus-mcp-button" %>
       <% end %>
     </section>
   <% end %>
 
-  <section class="mt-8" aria-labelledby="reconnect-heading">
-    <h2 id="reconnect-heading" class="text-lg font-semibold">Reconnect to authorize additional access</h2>
-    <p class="my-3">Saving permissions here does not expand OAuth consent. The person who connected this application must start Reconnect or Authorize again in their MCP client, request the required scopes, and approve them on the store's consent screen. Then refresh the client's tool list.</p>
-    <p class="my-3">Refreshing an existing token cannot add scopes. An expired token can be refreshed only with the access previously authorized. Reconnecting does not automatically enable any store permissions.</p>
+  <section class="solidus-mcp-section" aria-labelledby="reconnect-heading">
+    <h2 id="reconnect-heading">Reconnect to authorize additional access</h2>
+    <p>Saving permissions here does not expand OAuth consent. The person who connected this application must start Reconnect or Authorize again in their MCP client, request the required scopes, and approve them on the store's consent screen. Then refresh the client's tool list.</p>
+    <p>Refreshing an existing token cannot add scopes. An expired token can be refreshed only with the access previously authorized. Reconnecting does not automatically enable any store permissions.</p>
   </section>
 
-  <h2 class="text-lg font-semibold mt-8 mb-3">Recent permission changes</h2>
+  <h2 class="solidus-mcp-audit-heading">Recent permission changes</h2>
   <% if @changes.empty? %><p>No permission changes recorded.</p><% end %>
   <% @changes.each do |change| %>
-    <details class="mb-3">
+    <details class="solidus-mcp-audit-entry">
       <summary><%= change.created_at.iso8601 %> — administrator #<%= change.actor_id %></summary>
       <% if change.new_values["deleted_at"].present? %><p>Permission set deleted.</p><% elsif change.previous_values["deleted_at"].present? %><p>Permission set restored.</p><% end %>
       <p>Enabled: <%= change.previous_values["enabled"] %> → <%= change.new_values["enabled"] %></p>

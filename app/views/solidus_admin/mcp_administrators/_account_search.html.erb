@@ -1,0 +1,161 @@
+<%= javascript_tag nonce: true do %>
+  if (!customElements.get("solidus-mcp-account-search")) {
+    customElements.define("solidus-mcp-account-search", class extends HTMLElement {
+      connectedCallback() {
+        this.query = this.querySelector("[data-account-query]");
+        this.results = this.querySelector("[data-account-results]");
+        this.status = this.querySelector("[data-account-status]");
+        this.accountId = this.querySelector("[data-account-id]");
+        this.version = this.querySelector("[data-account-version]");
+        this.submit = this.closest("form").querySelector("[data-assign-account]");
+        this.items = [];
+        this.active = -1;
+        this.onFocus ||= () => this.search();
+        this.onBlur ||= () => this.close();
+        this.onInput ||= () => {
+          this.accountId.value = "";
+          this.version.value = "-1";
+          this.submit.disabled = true;
+          this.submit.value = "Assign MCP administrator";
+          this.query.setCustomValidity("Choose an account from the search results.");
+          this.items = [];
+          this.close();
+          this.status.textContent = "Searching accounts…";
+          this.timer = setTimeout(() => this.search(), 200);
+        };
+        this.onKeydown ||= event => this.handleKeydown(event);
+        this.onPointerdown ||= event => {
+          if (event.target.closest("[role=option]")) event.preventDefault();
+        };
+        this.onClick ||= event => {
+          const option = event.target.closest("[role=option]");
+          if (option) this.choose(Number(option.dataset.index));
+        };
+        this.query.addEventListener("focus", this.onFocus);
+        this.query.addEventListener("blur", this.onBlur);
+        this.query.addEventListener("input", this.onInput);
+        this.query.addEventListener("keydown", this.onKeydown);
+        this.results.addEventListener("pointerdown", this.onPointerdown);
+        this.results.addEventListener("click", this.onClick);
+        this.submit.disabled = !this.accountId.value;
+        this.query.setCustomValidity(this.accountId.value ? "" : "Choose an account from the search results.");
+      }
+
+      disconnectedCallback() {
+        this.close();
+        this.query.removeEventListener("focus", this.onFocus);
+        this.query.removeEventListener("blur", this.onBlur);
+        this.query.removeEventListener("input", this.onInput);
+        this.query.removeEventListener("keydown", this.onKeydown);
+        this.results.removeEventListener("pointerdown", this.onPointerdown);
+        this.results.removeEventListener("click", this.onClick);
+      }
+
+      async search() {
+        clearTimeout(this.timer);
+        this.request?.abort();
+        const request = this.request = new AbortController();
+        this.status.textContent = "Searching accounts…";
+        try {
+          const url = new URL(this.dataset.searchUrl, window.location.href);
+          url.searchParams.set("query", this.query.value);
+          const response = await fetch(url, {
+            headers: {Accept: "application/json"}, credentials: "same-origin", signal: request.signal
+          });
+          if (!response.ok) throw new Error("Search unavailable");
+          const result = await response.json();
+          if (request.signal.aborted || !this.isConnected) return;
+          this.items = result.items;
+          this.active = -1;
+          this.query.removeAttribute("aria-activedescendant");
+          this.results.replaceChildren();
+          this.items.forEach((item, index) => {
+            const option = document.createElement("li");
+            option.id = this.results.id + "-" + index;
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", "false");
+            option.dataset.index = index;
+            option.textContent = item.email;
+            if (item.lock_version >= 0) {
+              const note = document.createElement("small");
+              note.textContent = "Previously assigned — select to restore";
+              option.append(note);
+            }
+            this.results.append(option);
+          });
+          this.results.hidden = this.items.length === 0;
+          this.query.setAttribute("aria-expanded", String(this.items.length > 0));
+          this.status.textContent = !this.items.length ? "No eligible accounts found."
+            : result.more ? "Showing 20 matches. Keep typing to narrow the search."
+            : this.items.length + " matching account(s). Choose one to continue.";
+          if (this.openDirection && this.items.length) {
+            this.highlight(this.openDirection > 0 ? 0 : this.items.length - 1);
+          }
+          this.openDirection = null;
+        } catch (error) {
+          if (error.name !== "AbortError") {
+            this.results.hidden = true;
+            this.query.setAttribute("aria-expanded", "false");
+            this.status.textContent = "Account search is unavailable. Try again.";
+          }
+        }
+      }
+
+      handleKeydown(event) {
+        if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+          event.preventDefault();
+          const direction = event.key === "ArrowDown" ? 1 : -1;
+          if (!this.items.length) {
+            this.openDirection = direction;
+            this.search();
+          } else {
+            this.results.hidden = false;
+            this.query.setAttribute("aria-expanded", "true");
+            const index = this.active < 0 ? (direction > 0 ? 0 : this.items.length - 1)
+              : (this.active + direction + this.items.length) % this.items.length;
+            this.highlight(index);
+          }
+        } else if (event.key === "Enter" && !this.results.hidden && this.active >= 0) {
+          event.preventDefault();
+          this.choose(this.active);
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          this.close();
+        }
+      }
+
+      highlight(index) {
+        this.active = index;
+        Array.from(this.results.children).forEach((option, position) => {
+          option.setAttribute("aria-selected", String(position === index));
+        });
+        const option = this.results.children[index];
+        this.query.setAttribute("aria-activedescendant", option.id);
+        option.scrollIntoView({block: "nearest"});
+      }
+
+      choose(index) {
+        const item = this.items[index];
+        if (!item) return;
+        this.query.value = item.email;
+        this.accountId.value = item.id;
+        this.version.value = item.lock_version;
+        this.submit.disabled = false;
+        this.submit.value = item.lock_version >= 0 ? "Restore MCP administrator" : "Assign MCP administrator";
+        this.query.setCustomValidity("");
+        this.status.textContent = item.email + " selected.";
+        this.close();
+      }
+
+      close() {
+        clearTimeout(this.timer);
+        this.request?.abort();
+        this.results.hidden = true;
+        this.query.setAttribute("aria-expanded", "false");
+        this.query.removeAttribute("aria-activedescendant");
+        this.active = -1;
+        this.openDirection = null;
+      }
+    });
+  }
+<% end %>

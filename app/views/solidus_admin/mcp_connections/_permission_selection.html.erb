@@ -1,0 +1,51 @@
+<%= javascript_tag nonce: true do %>
+  if (!customElements.get("solidus-mcp-permissions")) {
+    customElements.define("solidus-mcp-permissions", class extends HTMLElement {
+      connectedCallback() {
+        this.onChange ||= this.handleChange.bind(this);
+        this.addEventListener("change", this.onChange);
+        this.querySelectorAll("[data-selection-control]").forEach(control => {
+          control.hidden = false;
+        });
+        this.syncSelection();
+      }
+
+      disconnectedCallback() {
+        this.removeEventListener("change", this.onChange);
+      }
+
+      permissions(container = this) {
+        return Array.from(container.querySelectorAll("input[data-permission]:not(:disabled)"));
+      }
+
+      handleChange(event) {
+        const control = event.target;
+        if (control.matches("[data-select-all], [data-select-group]")) {
+          const container = control.matches("[data-select-group]")
+            ? control.closest("[data-permission-group]")
+            : this;
+          this.permissions(container).forEach(permission => {
+            permission.checked = control.checked;
+          });
+        }
+        this.syncSelection();
+      }
+
+      syncSelection() {
+        this.syncControl(this.querySelector("[data-select-all]"), this);
+        this.querySelectorAll("[data-permission-group]").forEach(group => {
+          this.syncControl(group.querySelector("[data-select-group]"), group);
+        });
+      }
+
+      syncControl(control, container) {
+        if (!control) return;
+        const permissions = this.permissions(container);
+        const selected = permissions.filter(permission => permission.checked).length;
+        control.checked = permissions.length > 0 && selected === permissions.length;
+        control.indeterminate = selected > 0 && selected < permissions.length;
+        control.disabled = permissions.length === 0;
+      }
+    });
+  }
+<% end %>

@@ -10,12 +10,14 @@ raise "The dummy application only runs in test or explicit loading checks" unles
 module McpTestHost
   class Application < Rails::Application
     config.root = File.expand_path("..", __dir__)
-    config.load_defaults 8.0
+    config.load_defaults "#{Rails::VERSION::MAJOR}.#{Rails::VERSION::MINOR}"
     # Keep rate-limit counters local to this test process, including across Docker runs.
     config.cache_store = :memory_store
     config.eager_load = ENV["MCP_EAGER_LOAD"] == "1"
     config.enable_reloading = ENV["MCP_RELOADING"] == "1"
     config.secret_key_base = "solidus-mcp-test-only-" * 8
+    # This fixture renders engine styles without a generated storefront asset manifest.
+    config.assets.check_precompiled_asset = false
     config.hosts.clear
     config.action_controller.allow_forgery_protection = true
     config.action_dispatch.show_exceptions = :rescuable

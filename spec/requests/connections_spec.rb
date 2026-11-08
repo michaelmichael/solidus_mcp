@@ -6,8 +6,8 @@ RSpec.describe "MCP connection management", type: :request do
   let(:admin) { create_user }
   let(:application) { Doorkeeper::Application.create!(name: "Catalog assistant", redirect_uri: "https://client.example/callback", confidential: false) }
   let!(:token) { Doorkeeper::AccessToken.create!(application: application, resource_owner_id: admin.id, scopes: "mcp:read mcp:write", expires_in: 3600, resource: SolidusMcp.configuration.endpoint_url) }
-  let(:path) { "/admin/mcp_connections/#{application.id}?user_id=#{admin.id}" }
-  let(:edit_path) { "/admin/mcp_connections/#{application.id}/edit?user_id=#{admin.id}" }
+  let(:path) { "/admin/mcp_connections/#{application.id}/owners/#{admin.id}" }
+  let(:edit_path) { "/admin/mcp_connections/#{application.id}/owners/#{admin.id}/edit" }
 
   before { skip "SolidusAdmin is optional" unless defined?(SolidusAdmin::Engine) }
 
@@ -15,8 +15,8 @@ RSpec.describe "MCP connection management", type: :request do
     {"X-Test-User" => @request_user&.id.to_s}
   end
 
-  def form_token(method = "patch")
-    get edit_path, headers: request_headers
+  def form_token(method = "patch", edit: edit_path)
+    get edit, headers: request_headers
     expect(response).to have_http_status(:ok)
     form = Nokogiri::HTML(response.body).css('form[action*="/mcp_connections/"]').find do |element|
       element.at_css('input[name="_method"]')&.[]("value") == method
@@ -51,6 +51,45 @@ RSpec.describe "MCP connection management", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include('value="update_product"', 'value="get_product"', "Products")
     expect(response.body).not_to include(token.token, token.plaintext_token)
+  end
+
+  it "redirects existing query-string edit links to a path containing the connection owner" do
+    @request_user = admin
+    get "/admin/mcp_connections/#{application.id}/edit", params: {user_id: admin.id}, headers: request_headers
+    expect(response).to redirect_to(edit_path)
+    follow_redirect!(headers: request_headers)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(admin.email)
+  end
+
+  it "redirects the earlier users path to avoid the Users sidebar matcher" do
+    @request_user = admin
+    get "/admin/mcp_connections/#{application.id}/users/#{admin.id}/edit", headers: request_headers
+    expect(response).to redirect_to(edit_path)
+  end
+
+  it "preserves the selected connection owner when changing the admin theme" do
+    @request_user = admin
+    owner = create_user
+    create_token(application: application, user: owner)
+    owner_path = "/admin/mcp_connections/#{application.id}/owners/#{owner.id}/edit"
+    get owner_path, params: {switch_to_theme: "solidus_dimmed", system_theme: "light"}, headers: request_headers
+    expect(response).to redirect_to("#{owner_path}?account_menu_open=true")
+    follow_redirect!(headers: request_headers)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(owner.email)
+    expect(response.body).not_to include(admin.email)
+    expect(SolidusMcp::ConnectionPolicy.count).to eq(0)
+  end
+
+  it "marks connection edit pages as active in the AI connections navigation" do
+    item = SolidusAdmin::Config.menu_items.find { |entry| entry[:key] == :mcp_connections }
+    matcher = item.fetch(:match_path)
+    expect(matcher.call(edit_path)).to be(true)
+    expect(matcher.call("/admin/mcp_connections?deleted=1")).to be(true)
+    expect(matcher.call("/admin/users")).to be(false)
+    expect(matcher.call("/admin/mcp_connections_other")).to be(false)
+    expect(edit_path).not_to match(%r{/(users|store_credits)})
   end
 
   it "shows missing scopes beside permissions without expanding tokens when saved" do
@@ -246,5 +285,148 @@ RSpec.describe "MCP connection management", type: :request do
     expect(saved.reload.deleted_at).to be_nil
     expect(saved.permissions).to eq(["get_product"])
     expect(other.reload.permissions).to eq(["search_products"])
+  end
+  it "lets an MCP administrator manage another person's connection with an attributed audit" do
+    owner = create_user(mcp_admin: false)
+    create_token(application: application, user: owner)
+    owner_path = "/admin/mcp_connections/#{application.id}/owners/#{owner.id}"
+    @request_user = admin
+    csrf = form_token(edit: "#{owner_path}/edit")
+    patch owner_path, headers: request_headers, params: {authenticity_token: csrf,
+                                                         connection_policy: {permissions: ["get_product"], enabled: "1", lock_version: "-1"}}
+    expect(response).to have_http_status(:see_other)
+    saved = SolidusMcp::ConnectionPolicy.find_by!(application: application, user: owner)
+    expect(saved.permissions).to eq(["get_product"])
+    expect(saved.policy_changes.last.actor_id).to eq(admin.id)
+  end
+
+  it "returns forbidden if MCP administration access changes before the management write" do
+    @request_user = admin
+    csrf = form_token
+    allow(SolidusMcp::Administration).to receive(:can_manage?).and_return(true, false)
+    save_policy(csrf: csrf)
+    expect(response).to have_http_status(:forbidden)
+    expect(SolidusMcp::ConnectionPolicy.count).to eq(0)
+  end
+
+  context "as an assigned MCP administrator" do
+    let(:manager) { create_user(superadmin: false) }
+    let(:ordinary_user) { create_user(mcp_admin: false) }
+    let(:peer) { create_user(superadmin: false) }
+    let!(:manager_token) { create_token(application: application, user: manager) }
+    let!(:ordinary_token) { create_token(application: application, user: ordinary_user) }
+    let!(:peer_token) { create_token(application: application, user: peer) }
+    let(:ordinary_path) { "/admin/mcp_connections/#{application.id}/owners/#{ordinary_user.id}" }
+
+    before { @request_user = manager }
+
+    it "shows ordinary users and its own read-only connection, but hides privileged peers" do
+      get "/admin/mcp_connections", headers: request_headers
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(manager.email, ordinary_user.email)
+      expect(response.body).not_to include(admin.email, peer.email, "Manage MCP administrators")
+    end
+
+    it "can change ordinary users' permissions with an attributed audit" do
+      csrf = form_token(edit: "#{ordinary_path}/edit")
+      patch ordinary_path, headers: request_headers, params: {authenticity_token: csrf,
+                                                              connection_policy: {permissions: ["get_product"], enabled: "1", lock_version: "-1"}}
+      expect(response).to have_http_status(:see_other)
+      saved = SolidusMcp::ConnectionPolicy.find_by!(application: application, user: ordinary_user)
+      expect(saved.policy_changes.last.actor_id).to eq(manager.id)
+    end
+
+    it "cannot view or manage another administrator or a superadministrator" do
+      [admin, peer].each do |owner|
+        get "/admin/mcp_connections/#{application.id}/owners/#{owner.id}/edit", headers: request_headers
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+
+    it "cannot change its own grants even with a valid CSRF token" do
+      own_path = "/admin/mcp_connections/#{application.id}/owners/#{manager.id}"
+      @request_user = admin
+      csrf = form_token(edit: "#{own_path}/edit")
+      @request_user = manager
+      patch own_path, headers: request_headers, params: {authenticity_token: csrf,
+                                                         connection_policy: {permissions: ["update_product"], enabled: "1", lock_version: "-1"}}
+      expect(response).to have_http_status(:forbidden)
+      expect(SolidusMcp::ConnectionPolicy.count).to eq(0)
+      get "#{own_path}/edit", headers: request_headers
+      expect(response).to have_http_status(:ok)
+      expect(Nokogiri::HTML(response.body).css("form")).to be_empty
+    end
+  end
+
+  context "as an MCP user" do
+    let(:mcp_user) { create_user(mcp_admin: false) }
+    let!(:own_token) { create_token(application: application, user: mcp_user) }
+    let(:own_path) { "/admin/mcp_connections/#{application.id}/owners/#{mcp_user.id}" }
+
+    before { @request_user = mcp_user }
+
+    it "lists only the person's own active connections" do
+      get "/admin/mcp_connections", headers: request_headers
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(mcp_user.email, "View permissions")
+      expect(response.body).not_to include(admin.email, "Edit permissions")
+    end
+
+    it "shows assigned permissions without any permission-management forms" do
+      grant(application: application, user: mcp_user, permissions: ["get_product"])
+      get "#{own_path}/edit", headers: request_headers
+      expect(response).to have_http_status(:ok)
+      page = Nokogiri::HTML(response.body)
+      expect(page.css("input[data-permission][checked]").map { |input| input["value"] }).to eq(["get_product"])
+      expect(page.css("input[data-permission]:not([disabled])")).to be_empty
+      expect(page.css("form, [data-select-all], [data-select-group]")).to be_empty
+    end
+
+    it "cannot view another person's connection through either route format" do
+      get edit_path, headers: request_headers
+      expect(response).to have_http_status(:not_found)
+      get "/admin/mcp_connections/#{application.id}/edit", params: {user_id: admin.id}, headers: request_headers
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "cannot forge permission edits or delete requests with a valid CSRF token" do
+      saved = grant(application: application, user: mcp_user, permissions: ["get_product"])
+      @request_user = admin
+      csrf = form_token(edit: "#{own_path}/edit")
+      delete_csrf = form_token("delete", edit: "#{own_path}/edit")
+      @request_user = mcp_user
+      patch own_path, headers: request_headers, params: {authenticity_token: csrf,
+                                                         connection_policy: {permissions: ["update_product"], enabled: "1", lock_version: saved.lock_version}}
+      expect(response).to have_http_status(:forbidden)
+      delete own_path, headers: request_headers, params: {authenticity_token: delete_csrf,
+                                                          connection_policy: {lock_version: saved.lock_version}}
+      expect(response).to have_http_status(:forbidden)
+      expect(saved.reload.permissions).to eq(["get_product"])
+      expect(saved.deleted_at).to be_nil
+      expect(saved.policy_changes.count).to eq(0)
+    end
+
+    it "lists only their own deleted connections and cannot restore them" do
+      saved = grant(application: application, user: mcp_user, permissions: ["get_product"])
+      other = grant(application: application, user: admin, permissions: ["get_product"])
+      saved.delete_permissions!(actor: admin, lock_version: saved.lock_version)
+      other.delete_permissions!(actor: admin, lock_version: other.lock_version)
+      get "/admin/mcp_connections?deleted=1", headers: request_headers
+      expect(response.body).to include(mcp_user.email)
+      expect(response.body).not_to include(admin.email, "Review or restore")
+      get "#{own_path}/edit", headers: request_headers
+      expect(response.body).to include("Ask an MCP administrator to restore it")
+      expect(Nokogiri::HTML(response.body).css("form")).to be_empty
+    end
+
+    it "removes management access on the next request after the role is revoked" do
+      @request_user = admin
+      csrf = form_token
+      SolidusMcp.configuration.superadmin_emails.delete(admin.email.downcase)
+      patch path, headers: request_headers, params: {authenticity_token: csrf,
+                                                     connection_policy: {permissions: ["get_product"], enabled: "1", lock_version: "-1"}}
+      expect(response).to have_http_status(:forbidden)
+      expect(SolidusMcp::ConnectionPolicy.count).to eq(0)
+    end
   end
 end

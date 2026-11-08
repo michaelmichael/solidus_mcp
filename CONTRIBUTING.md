@@ -5,6 +5,12 @@ same checks used in CI; `docker compose run --rm test` provides Ruby/PostgreSQL.
 Use only a disposable database. No store checkout or production credentials are
 required.
 
+CI checks Rails 7.2 and 8.0 on Ruby 3.2, with and without Solidus Admin. To
+select a Rails version locally, set `RAILS_VERSION='~> 7.2.0'` or
+`RAILS_VERSION='~> 8.0.0'` when resolving dependencies and running checks.
+Set `WITHOUT_ADMIN=1` for the core-only suite. The default is Rails 8.0 with
+Solidus Admin. Use separate disposable databases when testing fresh migrations.
+
 Tests exercise real Solidus 4.7 models, engine-owned tools and transport,
 Doorkeeper consent/PKCE/refresh, record authorization, explicit per-tool grants,
 admin audits/locking/CSRF, mixed bulk results, custom tools, catalog upgrades,

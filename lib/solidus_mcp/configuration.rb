@@ -1,11 +1,17 @@
 # frozen_string_literal: true
 
+require "uri"
+
 module SolidusMcp
   class Configuration
     attr_accessor :custom_tools, :endpoint_url, :issuer_url, :allowed_origins,
-      :server_name, :instructions, :resource_owner_authenticator, :default_shipping_category_id
+      :server_name, :instructions, :resource_owner_authenticator, :default_shipping_category_id, :superadmin_emails
 
     def initialize
+      @superadmin_emails = ENV.fetch("SOLIDUS_MCP_SUPERADMIN_EMAILS", "").split(",").map { |email| email.strip.downcase }.uniq
+      unless @superadmin_emails.all? { |email| URI::MailTo::EMAIL_REGEXP.match?(email) }
+        raise ArgumentError, "SOLIDUS_MCP_SUPERADMIN_EMAILS must contain comma-separated login email addresses"
+      end
       @custom_tools = []
       @allowed_origins = []
       @server_name = "solidus-store"

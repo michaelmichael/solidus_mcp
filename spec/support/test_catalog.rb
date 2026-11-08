@@ -2,8 +2,14 @@
 
 module TestCatalog
   module Helpers
-    def create_user(admin: true)
-      TestUser.create!(email: "user-#{SecureRandom.hex(4)}@example.test", admin: admin)
+    def create_user(admin: true, mcp_admin: true, superadmin: mcp_admin)
+      user = TestUser.create!(email: "user-#{SecureRandom.hex(4)}@example.test", admin: admin, mcp_admin: mcp_admin)
+      if superadmin
+        SolidusMcp.configuration.superadmin_emails |= [user.email.downcase]
+      elsif mcp_admin
+        SolidusMcp::Administrator.create!(user: user)
+      end
+      user
     end
 
     def create_application

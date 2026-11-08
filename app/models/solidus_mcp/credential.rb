@@ -22,7 +22,7 @@ module SolidusMcp
     def active?
       token.reload
       user&.reload
-      token.accessible? && token.application.present? && user&.admin? &&
+      token.accessible? && token.application.present? && Administration.user?(user) &&
         token.resource == SolidusMcp.configuration.endpoint_url &&
         (token.scopes.to_a & SCOPES).any?
     rescue ActiveRecord::RecordNotFound

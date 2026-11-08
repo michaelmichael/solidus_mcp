@@ -1,0 +1,67 @@
+<%= stylesheet_link_tag "solidus_mcp/admin", "data-turbo-track": "reload" %>
+<div class="solidus-mcp-admin">
+  <%= link_to "AI connections", solidus_admin.mcp_connections_path %>
+  <h1 class="solidus-mcp-connection-title">MCP administrators</h1>
+  <p>Superadministrators assign MCP administrators. MCP administrators can manage ordinary MCP users' connections; only superadministrators can change privileged connections.</p>
+  <h2 class="solidus-mcp-audit-heading">Superadministrators</h2>
+  <p>These accounts are designated in server configuration and cannot be changed here. Solidus administrator status is still required.</p>
+  <ul>
+    <% @superadmins.each do |user| %>
+      <li><%= user.email %><%= " (not currently a Solidus administrator)" unless user.admin? %></li>
+    <% end %>
+  </ul>
+
+  <h2 class="solidus-mcp-audit-heading">Assign an MCP administrator</h2>
+  <%= form_with url: solidus_admin.mcp_administrators_path, method: :post, local: true, class: "solidus-mcp-role-form" do %>
+    <solidus-mcp-account-search data-search-url="<%= solidus_admin.search_mcp_administrators_path %>">
+      <%= label_tag "administrator_account_email", "Account login email" %>
+      <div class="solidus-mcp-account-field">
+        <%= search_field_tag nil, nil, id: "administrator_account_email", required: true,
+          autocomplete: "off", maxlength: 100, placeholder: "Search by email…", role: "combobox",
+          aria: {autocomplete: "list", expanded: "false", controls: "administrator_account_results"}, data: {account_query: true} %>
+        <ul id="administrator_account_results" role="listbox" aria-label="Matching administrator accounts" hidden data-account-results></ul>
+      </div>
+      <%= hidden_field_tag "administrator[user_id]", "", id: nil, data: {account_id: true} %>
+      <%= hidden_field_tag "administrator[lock_version]", "-1", id: nil, data: {account_version: true} %>
+      <p role="status" aria-live="polite" data-account-status>Search for an existing Solidus administrator, then choose an account.</p>
+    </solidus-mcp-account-search>
+    <%= submit_tag "Assign MCP administrator", disabled: true, data: {assign_account: true}, class: "solidus-mcp-button solidus-mcp-button-primary" %>
+    <%= render "solidus_admin/mcp_administrators/account_search" %>
+  <% end %>
+  <p>The account must already be a Solidus administrator. This assignment does not enable tools or expand OAuth consent.</p>
+
+  <h2 class="solidus-mcp-audit-heading">Assignments</h2>
+  <div class="solidus-mcp-table-scroll">
+    <table class="solidus-mcp-table">
+      <thead><tr><th scope="col">User</th><th scope="col">MCP access</th><th scope="col">Change role</th></tr></thead>
+      <tbody>
+        <% @administrators.each do |assignment| %>
+          <% user = @users[assignment.user_id] %>
+          <% configured_superadmin = SolidusMcp::Administration.superadmin_user_ids.include?(assignment.user_id.to_s) %>
+          <tr>
+            <td><%= user&.email || "Deleted account" %></td>
+            <td><%= configured_superadmin ? "Superadministrator (server configuration)" : (assignment.enabled? && user&.admin? ? "MCP administrator" : "MCP user or inactive account") %></td>
+            <td>
+              <% unless configured_superadmin %>
+                <%= form_with url: solidus_admin.mcp_administrator_path(assignment), method: :patch, local: true do %>
+                  <%= hidden_field_tag "administrator[lock_version]", assignment.lock_version, id: nil %>
+                  <%= hidden_field_tag "administrator[enabled]", assignment.enabled? ? "0" : "1", id: nil %>
+                  <%= submit_tag(assignment.enabled? ? "Remove MCP administrator" : "Restore MCP administrator", class: "solidus-mcp-button") %>
+                <% end %>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+  <% if @administrators.empty? %><p>No MCP administrators have been assigned.</p><% end %>
+  <nav class="solidus-mcp-pagination" aria-label="Administrator assignment pages">
+    <% if @page > 1 %><%= link_to "Previous", solidus_admin.mcp_administrators_path(page: @page - 1) %><% end %>
+    <% if @more %><%= link_to "Next", solidus_admin.mcp_administrators_path(page: @page + 1) %><% end %>
+  </nav>
+  <h2 class="solidus-mcp-audit-heading">Recent role changes</h2>
+  <% @changes.each do |change| %>
+    <p><%= change.created_at.iso8601 %> — superadministrator <%= @audit_users[change.actor_id]&.email || "Deleted account" %> <%= change.enabled? ? "assigned" : "removed" %> MCP administrator access for <%= @audit_users[change.administrator.user_id]&.email || "Deleted account" %>.</p>
+  <% end %>
+</div>
