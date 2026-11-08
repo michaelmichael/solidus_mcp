@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCP data access proposal</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #20242b; background: #f4f5f7; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1120px; margin: 44px auto; padding: 0 24px; }
+    header { margin-bottom: 28px; }
+    .eyebrow { color: #5a6380; text-transform: uppercase; letter-spacing: .09em; font-size: 12px; font-weight: 700; }
+    h1 { font-size: 30px; letter-spacing: -.025em; margin: 10px 0; }
+    h2, legend { font-size: 18px; font-weight: 650; margin: 0; }
+    p { line-height: 1.55; }
+    header p { max-width: 780px; color: #576070; }
+    .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+    .card { background: white; border: 1px solid #dde1e8; border-radius: 12px; padding: 24px; }
+    fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+    fieldset + fieldset { border-top: 1px solid #e4e7ed; padding-top: 24px; margin-top: 24px; }
+    fieldset + fieldset legend { float: left; width: 100%; margin-bottom: 4px; }
+    .intro { clear: both; color: #5d6572; font-size: 14px; margin: 8px 0 20px; }
+    .option { display: grid; grid-template-columns: 20px 1fr; gap: 12px; align-items: start; padding: 15px 0; cursor: pointer; }
+    .option + .option { border-top: 1px solid #edf0f4; }
+    .option input { width: 18px; height: 18px; margin: 3px 0 0; accent-color: #365edb; }
+    .option strong { display: block; font-size: 15px; }
+    .option small { display: block; color: #616a78; font-size: 13px; line-height: 1.55; margin-top: 5px; }
+    .badge { display: inline-block; background: #eef2ff; color: #3b4c93; border-radius: 5px; font-size: 11px; font-weight: 650; padding: 3px 7px; margin-left: 7px; vertical-align: middle; }
+    .notice { background: #f6f8fc; border-radius: 7px; padding: 12px 14px; color: #525c71; font-size: 13px; line-height: 1.6; margin-bottom: 0; }
+    .preview label { display: block; font-weight: 600; font-size: 13px; margin-top: 22px; }
+    select { width: 100%; padding: 10px; margin-top: 8px; border: 1px solid #cbd1db; border-radius: 6px; font: inherit; background: white; }
+    .status { font-size: 13px; margin: 18px 0 12px; color: #286443; }
+    .status[data-error="true"] { color: #a22a2a; }
+    pre { margin: 0; padding: 20px; background: #172032; color: #e0e8fc; border-radius: 8px; font: 12px/1.7 ui-monospace, monospace; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .footnote { font-size: 12px; color: #616a78; margin-bottom: 0; }
+    .principles { margin-top: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .principles strong { font-size: 13px; }
+    .principles p { margin: 5px 0 0; font-size: 13px; color: #616a78; }
+    @media (max-width: 760px) { main { margin-top: 24px; } .layout, .principles { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Solidus MCP · Deferred design</div>
+      <h1>Tools decide what it can do. Data groups decide what it can see.</h1>
+      <p>This idea is deferred while we keep the serializer feature small. The standalone preview uses fictional records and does not save or change store permissions.</p>
+    </header>
+    <div class="layout">
+      <section class="card" aria-label="Proposed connection permissions">
+        <fieldset>
+          <legend>Tool permissions</legend>
+          <label class="option">
+            <input id="tool" type="checkbox" checked>
+            <span><strong>Read order details</strong><small>Order number, totals, states, and line items. Optional customer information needs a separate data grant.</small></span>
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>Data access <span class="badge">Optional</span></legend>
+          <p class="intro">These grants apply across the connection's supported order tools. They do not enable tools or permit changes to data.</p>
+          <label class="option">
+            <input id="contact" type="checkbox">
+            <span><strong>Customer contact</strong><small>Order email and shipping contact phone, when accessible. Does not include postal addresses.</small></span>
+          </label>
+          <label class="option">
+            <input id="shipping" type="checkbox">
+            <span><strong>Shipping address</strong><small>Recipient, company, street, city, region, postal code, and country. Does not include email or phone.</small></span>
+          </label>
+          <p class="notice">The connected user's store permissions still apply. Optional information is omitted when access is denied.</p>
+        </fieldset>
+      </section>
+      <section class="card preview" aria-labelledby="preview-title">
+        <h2 id="preview-title">Response preview</h2>
+        <p class="intro">A sample <code>get_order</code> call with a valid read token. Change the store account's abilities to see how the checks combine.</p>
+        <label for="access">Store account access</label>
+        <select id="access">
+          <option value="all">Can read the order and its address</option>
+          <option value="order">Can read the order, but not its address</option>
+          <option value="none">Cannot read the order</option>
+        </select>
+        <p id="status" class="status" role="status" aria-live="polite"></p>
+        <pre id="result" aria-label="Sample tool response"></pre>
+        <p class="footnote">Omitted optional fields mean unavailable; they do not tell the client whether a private record exists. Error shapes here are illustrative.</p>
+      </section>
+    </div>
+    <section class="principles" aria-label="Design principles">
+      <div><strong>Ordinary fields stay ordinary</strong><p>No second checkbox for the order details already covered by the tool grant.</p></div>
+      <div><strong>Two independent checks</strong><p>A data-group grant never overrides the user's Solidus record abilities.</p></div>
+      <div><strong>New access starts disabled</strong><p>Existing connections receive no new data grants automatically.</p></div>
+    </section>
+  </main>
+  <script>
+    const tool = document.querySelector('#tool');
+    const contact = document.querySelector('#contact');
+    const shipping = document.querySelector('#shipping');
+    const access = document.querySelector('#access');
+    const status = document.querySelector('#status');
+    const output = document.querySelector('#result');
+
+    function render() {
+      let result;
+      let message;
+      let error = false;
+      if (!tool.checked) {
+        result = {error: 'Tool permission is not enabled'};
+        message = 'Call denied: a data grant cannot enable a tool.';
+        error = true;
+      } else if (access.value === 'none') {
+        result = {error: 'Record is unavailable'};
+        message = 'Call denied: access to the primary order is required.';
+        error = true;
+      } else {
+        result = {
+          id: 42, number: 'R100042', state: 'complete', currency: 'USD', total: '39.90',
+          line_items: [{variant_id: 501, quantity: 2, price: '19.95'}],
+          line_items_truncated: false
+        };
+        if (contact.checked) {
+          result.customer_contact = {email: 'customer@example.test'};
+          if (access.value === 'all') result.customer_contact.phone = '+1 202 555 0142';
+        }
+        if (shipping.checked && access.value === 'all') {
+          result.shipping_address = {
+            recipient: 'Example Customer', address1: '100 Example Street',
+            city: 'Portland', region: 'Oregon', postal_code: '97201', country: 'US'
+          };
+        }
+        message = 'Call succeeds. Only granted and accessible optional fields are included.';
+        if (access.value === 'order' && (contact.checked || shipping.checked)) {
+          message = 'Call succeeds. Address fields and shipping phone are omitted.';
+        }
+      }
+      status.textContent = message;
+      status.dataset.error = String(error);
+      output.textContent = JSON.stringify(result, null, 2);
+    }
+    [tool, contact, shipping, access].forEach(control => control.addEventListener('change', render));
+    render();
+  </script>
+</body>
+</html>

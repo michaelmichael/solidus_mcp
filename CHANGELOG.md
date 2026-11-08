@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add optional product and order serializer hooks for built-in read tools, with
+  a plain Ruby interface and an Alba adapter example. Preserve record authorization,
+  pagination, and tool-owned order line items; resolve class names across Rails reloads.
+- Add `Policy#can?` so serializers can omit inaccessible optional related fields
+  while retaining strict authorization for required records.
+
 ## 0.2.0.rc1 (2026-11-08)
 
 First public release candidate. The earlier registry implementation was unpublished.

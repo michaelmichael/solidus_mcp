@@ -5,7 +5,8 @@ require "uri"
 module SolidusMcp
   class Configuration
     attr_accessor :custom_tools, :endpoint_url, :issuer_url, :allowed_origins,
-      :server_name, :instructions, :resource_owner_authenticator, :default_shipping_category_id, :superadmin_emails
+      :server_name, :instructions, :resource_owner_authenticator, :default_shipping_category_id, :superadmin_emails,
+      :product_serializer, :order_serializer
 
     def initialize
       @superadmin_emails = ENV.fetch("SOLIDUS_MCP_SUPERADMIN_EMAILS", "").split(",").map { |email| email.strip.downcase }.uniq
@@ -21,6 +22,23 @@ module SolidusMcp
 
     def enabled?
       endpoint_url.present? && issuer_url.present?
+    end
+
+    def serializer_class(kind)
+      name = public_send(:"#{kind}_serializer")
+      return if name.nil?
+      unless name.is_a?(String) && name.present?
+        raise ArgumentError, "#{kind}_serializer must be a class-name string or nil"
+      end
+      serializer = name.constantize
+      unless serializer.is_a?(Class) && serializer.respond_to?(:call)
+        raise ArgumentError, "#{name} must implement .call(record, context:)"
+      end
+      serializer
+    end
+
+    def validate_serializers!
+      %i[product order].each { |kind| serializer_class(kind) }
     end
 
     def validate!
