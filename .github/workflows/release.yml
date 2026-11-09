@@ -1,0 +1,79 @@
+name: Release gem
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solidus-mcp-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release tag
+    if: github.repository == 'michaelmichael/solidus_mcp'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: false
+      - name: Require a version-matching tag on main
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          ruby -r ./lib/solidus_mcp/version -e '
+            expected = "v#{SolidusMcp::VERSION}"
+            abort "Release tag must be #{expected}, got #{ENV.fetch("RELEASE_TAG")}" unless ENV.fetch("RELEASE_TAG") == expected
+          '
+          git merge-base --is-ancestor HEAD origin/main
+
+  ci:
+    name: Release checks
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  publish:
+    name: Publish to RubyGems
+    needs: [validate, ci]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: rubygems
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: false
+      - name: Build gem from the tested release commit
+        id: build
+        run: |
+          gem build solidus_mcp.gemspec
+          ruby -r ./lib/solidus_mcp/version -e 'puts "gem=solidus_mcp-#{SolidusMcp::VERSION}.gem"' >> "$GITHUB_OUTPUT"
+      - name: Preserve release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.ref_name }}
+          path: ${{ steps.build.outputs.gem }}
+          if-no-files-found: error
+      - name: Authenticate with RubyGems Trusted Publishing
+        uses: rubygems/configure-rubygems-credentials@d1a7a63e81f64d155b0fa60c431503664a2009d8
+      - name: Publish gem
+        env:
+          GEM_FILE: ${{ steps.build.outputs.gem }}
+        run: gem push "$GEM_FILE"
