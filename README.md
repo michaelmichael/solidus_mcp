@@ -29,7 +29,7 @@ These instructions assume you already have a working Solidus application. If you
 Add the gem to your `Gemfile`:
 
 ```ruby
-gem 'solidus_mcp', '0.2.0.rc1'
+gem 'solidus_mcp', '0.2.0.rc2'
 ```
 
 Then run:
