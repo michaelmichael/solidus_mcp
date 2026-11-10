@@ -50,6 +50,12 @@ RSpec.describe "Engine OAuth", type: :request do
       expect(page.css('link[rel="stylesheet"]').map { |link| link["href"] }.join).to include("solidus_mcp/#{name}")
       expect(Rails.application.config.assets.precompile).to include("solidus_mcp/#{name}.css")
     end
+    disclosure = page.at_css("details.solidus-mcp-consent-review")
+    expect(disclosure).to be_present
+    expect(disclosure["open"]).to be_nil
+    expect(disclosure.at_css("summary").text).to eq("Change requested access")
+    expect(disclosure.at_css("#review-oauth-scopes")).to be_present
+    expect(page.at_css(".solidus-mcp-consent-eyebrow")).to be_nil
     expect(page.at_css('input[value="Authorize"].solidus-mcp-button-primary')).to be_present
     expect(page.at_css('input[value="Deny"].solidus-mcp-button')).to be_present
     expect(page.at_css('#review-oauth-scopes input[value="Review access"].solidus-mcp-button')).to be_present
