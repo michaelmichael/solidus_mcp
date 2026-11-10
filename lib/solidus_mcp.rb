@@ -29,7 +29,7 @@ module SolidusMcp
 
   BUILTIN_TOOLS = %w[SearchProducts GetProduct GetProductVariants GetVariantPrices
     UpdateProduct UpdateVariantPrice BulkUpdateVariantPrices GetInventoryLevels
-    SearchInventory SearchOrders GetOrder GetOrderStatus CreateProduct].map { |name| "SolidusMcp::Tools::#{name}" }.freeze
+    SearchInventory SearchOrders GetOrder GetOrderStatus CreateProduct CreateVariant CreateOptionValue].map { |name| "SolidusMcp::Tools::#{name}" }.freeze
 
   class << self
     attr_writer :registry

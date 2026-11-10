@@ -210,6 +210,8 @@ Check your existing integrations before deploying changes to shared OAuth settin
 | Products | `get_product` | Read product descriptions and supported attributes. |
 | Products | `get_product_variants` | List variants, including the master variant. |
 | Products | `create_product` | Create a draft product. |
+| Products | `create_variant` | Create a non-master variant using existing option values. |
+| Products | `create_option_value` | Create a value under an existing option type. |
 | Products | `update_product` | Update the name, description, and metadata fields. |
 | Pricing | `get_variant_prices` | Read prices with their currency and country context. |
 | Pricing | `update_variant_price` | Update an existing price row. |
@@ -223,6 +225,12 @@ Check your existing integrations before deploying changes to shared OAuth settin
 Your client discovers each tool's input schema. Paginated tools accept `after_id` and `limit`, with a default limit of 25 and maximum of 100. Pass `next_after_id` from a response as the next request's `after_id` until it is null. Order results exclude customer contact information by default.
 
 Product creation requires a valid `shipping_category_id`, supplied with the call or through `config.default_shipping_category_id` in your initializer.
+
+Variant creation requires `product_id` and `sku`. Optional inputs include `price`, `option_value_ids`, `track_inventory`, `weight`, `height`, `width`, `depth`, and `cost_price`. If omitted, price defaults to the master price; stock items follow Solidus callbacks. Option values must belong to option types already attached to the product, with at most one value per option type.
+
+Option value creation requires `option_type_id`, `name`, and `presentation`. It returns an `option_value_id` usable with `create_variant`; it does not attach an option type to a product. Both creation tools require their own connection permission and `mcp:write` consent, along with the corresponding Solidus permissions. Existing connections must explicitly enable these new permissions.
+
+When upgrading from host-defined `CreateVariant` or `CreateOptionValue` tools with the same tool names, remove those entries from `config.custom_tools` to avoid duplicate registration.
 
 Price updates require an existing price row, an explicit currency, and `country_iso` (`null` for general-country pricing). Supply decimal amounts as strings, such as `"19.95"`. Bulk updates report success or failure for each entry and can partially succeed. Review the results and retry only failed entries as appropriate.
 

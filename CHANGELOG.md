@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add built-in `create_variant` and `create_option_value` tools with explicit
+  write permissions, record authorization, and Solidus validation. Hosts using
+  custom tools with these names must remove their custom registrations.
 - Express nullable country inputs in pricing tool schemas with `anyOf` branches
   for improved MCP client compatibility, preserving required fields and validation.
 - Add optional product and order serializer hooks for built-in read tools, with
