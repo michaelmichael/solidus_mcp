@@ -16,7 +16,7 @@ module SolidusMcp
                 required: %w[sku amount currency country_iso],
                 properties: {sku: {type: "string", minLength: 1, maxLength: 255},
                              amount: {type: "string"}, currency: {type: "string"},
-                             country_iso: {type: ["string", "null"]}}}
+                             country_iso: {anyOf: [{type: "string"}, {type: "null"}]}}}
 
       protected
 

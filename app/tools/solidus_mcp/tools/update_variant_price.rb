@@ -13,7 +13,7 @@ module SolidusMcp
       ability :update, "Spree::Price"
       input :variant_id, type: "integer", minimum: 1, required: true
       input :currency, type: "string", pattern: "^[A-Z]{3}$", required: true
-      input :country_iso, type: ["string", "null"], pattern: "^[A-Z]{2}$", required: true
+      input :country_iso, anyOf: [{type: "string", pattern: "^[A-Z]{2}$"}, {type: "null"}], required: true
       input :amount, type: "string", required: true
 
       protected
