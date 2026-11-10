@@ -40,6 +40,37 @@ RSpec.describe "Engine OAuth", type: :request do
     expect(JSON.parse(response.body)).to have_key("access_token")
   end
 
+  it "renders a standalone styled consent page with distinct authorization controls" do
+    consent
+    expect(response).to have_http_status(:ok)
+    page = Nokogiri::HTML(response.body)
+    expect(page.at_css('meta[name="viewport"]')).to be_present
+    expect(page.at_css("body.solidus-mcp-consent main[aria-labelledby='consent-heading']")).to be_present
+    %w[admin consent].each do |name|
+      expect(page.css('link[rel="stylesheet"]').map { |link| link["href"] }.join).to include("solidus_mcp/#{name}")
+      expect(Rails.application.config.assets.precompile).to include("solidus_mcp/#{name}.css")
+    end
+    disclosure = page.at_css("details.solidus-mcp-consent-review")
+    expect(disclosure).to be_present
+    expect(disclosure["open"]).to be_nil
+    expect(disclosure.at_css("summary").text).to eq("Change requested access")
+    expect(disclosure.at_css("#review-oauth-scopes")).to be_present
+    expect(page.at_css(".solidus-mcp-consent-eyebrow")).to be_nil
+    expect(page.at_css('input[value="Authorize"].solidus-mcp-button-primary')).to be_present
+    expect(page.at_css('input[value="Deny"].solidus-mcp-button')).to be_present
+    expect(page.at_css('#review-oauth-scopes input[value="Review access"].solidus-mcp-button')).to be_present
+    expect(page.at_css('#review-oauth-scopes input[type="submit"]')["class"]).not_to include("solidus-mcp-button-primary")
+  end
+
+  it "escapes client-controlled names and return addresses in the styled page" do
+    application.update!(name: '<script>alert("client")</script>')
+    consent
+    page = Nokogiri::HTML(response.body)
+    expect(page.at_css("#consent-heading").text).to include(application.name)
+    expect(page.css("script")).to be_empty
+    expect(page.at_css(".solidus-mcp-consent-address").text).to include(application.redirect_uri)
+  end
+
   it "shows exactly the requested read and write consent sections" do
     consent
     expect(response).to have_http_status(:ok)
