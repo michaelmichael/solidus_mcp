@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Express nullable country inputs in pricing tool schemas with `anyOf` branches
+  for improved MCP client compatibility, preserving required fields and validation.
 - Add optional product and order serializer hooks for built-in read tools, with
   a plain Ruby interface and an Alba adapter example. Preserve record authorization,
   pagination, and tool-owned order line items; resolve class names across Rails reloads.
