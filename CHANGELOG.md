@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Style the OAuth consent page with the MCP admin palette and shared controls,
+  including responsive layout and keyboard focus indicators, without requiring
+  Solidus Admin or changing the authorization flow.
+
 - Express nullable country inputs in pricing tool schemas with `anyOf` branches
   for improved MCP client compatibility, preserving required fields and validation.
 - Add optional product and order serializer hooks for built-in read tools, with

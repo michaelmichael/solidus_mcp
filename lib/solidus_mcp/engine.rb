@@ -13,9 +13,14 @@ module SolidusMcp
       app.config.filter_parameters += %i[access_token refresh_token client_secret code code_verifier authorization]
     end
 
+    initializer "solidus_mcp.stylesheets" do |app|
+      if app.config.respond_to?(:assets)
+        app.config.assets.precompile += %w[solidus_mcp/admin.css solidus_mcp/consent.css]
+      end
+    end
+
     initializer "solidus_mcp.admin_menu" do |app|
       if defined?(SolidusAdmin::Engine)
-        app.config.assets.precompile += %w[solidus_mcp/admin.css] if app.config.respond_to?(:assets)
         SolidusAdmin::Config.menu_items << {
           key: :mcp_connections, route: :mcp_connections_path, icon: "links-line", position: 85,
           match_path: ->(fullpath) { fullpath.split("?", 2).first.match?(%r{/mcp_(?:connections|administrators)(?:/|$)}) }
