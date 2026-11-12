@@ -4,7 +4,7 @@ module SolidusMcp
   # A catalog of explicit tools, not business resources or arbitrary methods.
   class Registry
     Entry = Struct.new(:name, :description, :category, :permission, :read_only,
-      :abilities, :input_schema, :class_name, keyword_init: true) do
+      :abilities, :input_schema, :class_name, :audit_action, keyword_init: true) do
       def scopes
         [read_only ? "mcp:read" : "mcp:write"]
       end
@@ -35,11 +35,14 @@ module SolidusMcp
       raise ArgumentError, "Duplicate tool: #{name}" if tools.key?(name)
       raise ArgumentError, "Permission must be unique to this tool" if tools.values.any? { |tool| tool.permission == permission }
       raise ArgumentError, "read_only must be a boolean" unless [true, false].include?(data.fetch(:read_only))
+      unless %w[read create update delete].include?(data[:audit_action]) && (data[:read_only] == (data[:audit_action] == "read"))
+        raise ArgumentError, "Audit action must match the tool's read/write scope"
+      end
       %i[description category].each { |key| raise ArgumentError, "Missing #{key}" if data.fetch(key).blank? }
       raise ArgumentError, "Tool needs Solidus abilities" if data[:abilities].empty?
       MCP::Tool::InputSchema.new(data[:input_schema])
       entry = Entry.new(name: name, permission: permission, **data.slice(:description, :category,
-        :read_only, :abilities, :input_schema, :class_name))
+        :read_only, :abilities, :input_schema, :class_name, :audit_action))
       entry.each_pair { |_, value| deep_freeze(value) }
       tools[name] = entry.freeze
     end

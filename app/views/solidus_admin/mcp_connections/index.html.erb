@@ -9,6 +9,8 @@
       "You are an MCP user. Only your own connections are shown; an MCP administrator manages their permissions."
     end %> Permissions also remain limited by the connection owner's store access and OAuth consent.</p>
 
+  <p><%= link_to "MCP activity", solidus_admin.mcp_activity_index_path %></p>
+
   <% if mcp_superadministrator? %>
     <p><%= link_to "Manage MCP administrators", solidus_admin.mcp_administrators_path %></p>
   <% end %>

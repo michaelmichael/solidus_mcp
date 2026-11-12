@@ -11,6 +11,7 @@ require "solidus_mcp/tool"
 require "solidus_mcp/registry"
 require "solidus_mcp/policy"
 require "solidus_mcp/connection_scopes"
+require "solidus_mcp/audited_server"
 require "solidus_mcp/server"
 
 module SolidusMcp
@@ -29,7 +30,10 @@ module SolidusMcp
 
   BUILTIN_TOOLS = %w[SearchProducts GetProduct GetProductVariants GetVariantPrices
     UpdateProduct UpdateVariantPrice BulkUpdateVariantPrices GetInventoryLevels
-    SearchInventory SearchOrders GetOrder GetOrderStatus CreateProduct].map { |name| "SolidusMcp::Tools::#{name}" }.freeze
+    SearchInventory SearchOrders GetOrder GetOrderStatus CreateProduct ListOptionTypes
+    ListOptionValues ListShippingCategories AddProductOptionType UpdateVariant ListStockLocations AdjustStock ListTaxons
+    AddProductToTaxon PublishProduct UnpublishProduct CreateVariantPrice
+    ListProductImages AttachProductImage ReorderProductImages RemoveProductImage CancelOrder ShipShipment RefundPayment].map { |name| "SolidusMcp::Tools::#{name}" }.freeze
 
   class << self
     attr_writer :registry

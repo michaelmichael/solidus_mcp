@@ -5,6 +5,7 @@ module SolidusMcp
     MAX_REQUEST_BYTES = 1.megabyte
 
     include HttpAccess
+    prepend_around_action :audit_request_context, except: :preflight
     before_action :authenticate, except: :preflight
 
     def handle
@@ -41,6 +42,35 @@ module SolidusMcp
 
     private
 
+    def audit_request_context
+      payload = nil
+      if request.post? && request.media_type == "application/json"
+        body = request.body.read(MAX_REQUEST_BYTES + 1)
+        request.body.rewind
+        payload = parse_payload(body) if body.bytesize <= MAX_REQUEST_BYTES
+      end
+      AuditContext.set(request_id: request.request_id, event_count: 0, invocation: nil) do
+        yield
+      ensure
+        # Authentication, scope challenges and transport checks can reject a
+        # request before SDK dispatch. Record these when identity is known.
+        if @audit_credential && payload.is_a?(Hash) && AuditContext.event_count.to_i.zero? && payload["method"].is_a?(String)
+          params = payload["params"].is_a?(Hash) ? payload["params"] : {}
+          method = payload["method"]
+          method = "unknown" unless %w[tools/call tools/list initialize ping].include?(method)
+          begin
+            ActionAudit.capture(credential: @audit_credential, protocol_method: method,
+              tool_name: params["name"], arguments: params["arguments"]) do |invocation|
+              invocation.status = [401, 403].include?(response.status) ? "denied" : "failed"
+              invocation.error_class = (invocation.status == "denied") ? "SolidusMcp::AccessDenied" : "MCP::ProtocolError"
+            end
+          rescue
+            Rails.logger.error("Solidus MCP could not record a rejected request")
+          end
+        end
+      end
+    end
+
     def parse_payload(body)
       JSON.parse(body)
     rescue JSON::ParserError
@@ -50,7 +80,13 @@ module SolidusMcp
     def authenticate
       bearer = request.authorization&.match(/\ABearer ([^\s]+)\z/i)&.captures&.first
       @credential = Credential.authenticate(bearer)
+      @audit_credential = @credential
       unless @credential
+        token = Doorkeeper::AccessToken.by_token(bearer) if bearer.present?
+        if token
+          owner = Spree.user_class.find_by(id: token.resource_owner_id)
+          @audit_credential = Credential.new(token, owner)
+        end
         response.set_header("WWW-Authenticate", %(Bearer resource_metadata="#{SolidusMcp.configuration.endpoint_url}/metadata"))
         return head :unauthorized
       end

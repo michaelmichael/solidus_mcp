@@ -18,6 +18,8 @@ module McpTestHost
     config.secret_key_base = "solidus-mcp-test-only-" * 8
     # This fixture renders engine styles without a generated storefront asset manifest.
     config.assets.check_precompiled_asset = false
+    # Keep matrix runs independent of disk caches left by Docker users.
+    config.assets.configure { |environment| environment.cache = Sprockets::Cache::MemoryStore.new }
     config.hosts.clear
     config.action_controller.allow_forgery_protection = true
     config.action_dispatch.show_exceptions = :rescuable

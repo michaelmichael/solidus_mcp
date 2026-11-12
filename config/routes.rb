@@ -5,6 +5,7 @@ if defined?(SolidusAdmin::Engine)
     resources :mcp_administrators, only: [:index, :create, :update] do
       get :search, on: :collection
     end
+    resources :mcp_activity, only: [:index]
     resources :mcp_connections, only: [:index]
     get "mcp_connections/:id/owners/:user_id/edit", to: "mcp_connections#edit", as: :edit_mcp_connection
     patch "mcp_connections/:id/owners/:user_id", to: "mcp_connections#update", as: :mcp_connection

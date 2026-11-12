@@ -10,7 +10,7 @@ module SolidusMcp
     end
 
     initializer "solidus_mcp.filter_credentials" do |app|
-      app.config.filter_parameters += %i[access_token refresh_token client_secret code code_verifier authorization]
+      app.config.filter_parameters += %i[access_token refresh_token client_secret code code_verifier authorization data_base64]
     end
 
     initializer "solidus_mcp.stylesheets" do |app|
@@ -23,7 +23,7 @@ module SolidusMcp
       if defined?(SolidusAdmin::Engine)
         SolidusAdmin::Config.menu_items << {
           key: :mcp_connections, route: :mcp_connections_path, icon: "links-line", position: 85,
-          match_path: ->(fullpath) { fullpath.split("?", 2).first.match?(%r{/mcp_(?:connections|administrators)(?:/|$)}) }
+          match_path: ->(fullpath) { fullpath.split("?", 2).first.match?(%r{/mcp_(?:connections|administrators|activity)(?:/|$)}) }
         }
       else
         Rails.autoloaders.main.ignore(root.join("app/controllers/solidus_admin"))
