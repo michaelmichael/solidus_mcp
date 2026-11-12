@@ -29,5 +29,9 @@ module TestCatalog
       shipping = Spree::ShippingCategory.first || Spree::ShippingCategory.create!(name: "Default")
       Spree::Product.create!(name: "Test product", price: amount, sku: sku, shipping_category: shipping)
     end
+
+    def create_option_type(name:, presentation:)
+      Spree::OptionType.create!(name: name, presentation: presentation)
+    end
   end
 end

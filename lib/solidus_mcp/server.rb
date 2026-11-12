@@ -10,7 +10,6 @@ module SolidusMcp
           annotations: {read_only_hint: tool.read_only, destructive_hint: !tool.read_only,
                         idempotent_hint: tool.read_only, open_world_hint: false}) do |**arguments|
           arguments.delete(:server_context)
-          policy.authorize!(tool)
           result = tool.class_name.constantize.execute(credential: credential, **arguments)
           MCP::Tool::Response.new([{type: "text", text: result.to_json}], structured_content: result)
         rescue AccessDenied, ToolError, MCP::Tool::InputSchema::ValidationError => e
@@ -21,7 +20,7 @@ module SolidusMcp
           MCP::Tool::Response.new([{type: "text", text: e.record.errors.full_messages.to_sentence}], error: true)
         end
       end
-      MCP::Server.new(name: SolidusMcp.configuration.server_name, version: VERSION,
+      AuditedServer.new(credential: credential, name: SolidusMcp.configuration.server_name, version: VERSION,
         tools: tools, instructions: SolidusMcp.configuration.instructions)
     end
   end

@@ -1,0 +1,53 @@
+<%= stylesheet_link_tag "solidus_mcp/admin", "data-turbo-track": "reload" %>
+<div class="solidus-mcp-admin">
+  <h1 class="solidus-mcp-page-title">MCP activity</h1>
+  <p class="solidus-mcp-intro">Review which user and client performed each action, its targets, and whether it succeeded. Your MCP administration role determines whose activity is visible.</p>
+  <p><%= link_to "AI connections", solidus_admin.mcp_connections_path %></p>
+
+  <%= form_with url: solidus_admin.mcp_activity_index_path, method: :get, local: true, class: "solidus-mcp-activity-filters" do %>
+    <div><%= label_tag :user, "User (email or ID)" %><%= text_field_tag :user, @filters["user"], maxlength: 255 %></div>
+    <div><%= label_tag :tool, "Tool" %><%= text_field_tag :tool, @filters["tool"], maxlength: 128, placeholder: "get_product" %></div>
+    <div><%= label_tag :outcome, "Outcome" %><%= select_tag :outcome, options_for_select([["All outcomes", ""], ["Succeeded", "succeeded"], ["Partially succeeded", "partial"], ["Denied", "denied"], ["Failed", "failed"], ["Unfinished", "started"]], @filters["outcome"]) %></div>
+    <div><%= label_tag :from, "From (#{Time.zone.name})" %><%= datetime_local_field_tag :from, @filters["from"], step: 1 %></div>
+    <div><%= label_tag :to, "To (#{Time.zone.name})" %><%= datetime_local_field_tag :to, @filters["to"], step: 1 %></div>
+    <%= hidden_field_tag :action_type, @filters["action_type"] if @filters["action_type"].present? %>
+    <div class="solidus-mcp-activity-filter-actions"><%= submit_tag "Filter" %> <%= link_to "Clear", solidus_admin.mcp_activity_index_path %></div>
+  <% end %>
+
+  <nav class="solidus-mcp-activity-groups" aria-label="Action types">
+    <%= link_to "All (#{@counts.values.sum})", solidus_admin.mcp_activity_index_path(@filters.except("action_type", "before_id")), aria: {current: @filters["action_type"].blank? ? "page" : nil} %>
+    <% SolidusMcp::ActivityEvent::ACTIONS.each do |action| %>
+      <%= link_to "#{action.titleize} (#{@counts.fetch(action, 0)})", solidus_admin.mcp_activity_index_path(@filters.except("before_id").merge("action_type" => action)), aria: {current: @filters["action_type"] == action ? "page" : nil} %>
+    <% end %>
+  </nav>
+
+  <div class="solidus-mcp-table-scroll">
+    <table class="solidus-mcp-table">
+      <thead><tr><th scope="col">Time</th><th scope="col">User</th><th scope="col">Client</th><th scope="col">Action</th><th scope="col">Outcome</th><th scope="col">Duration</th><th scope="col">Details</th></tr></thead>
+      <tbody>
+        <% @events.each do |event| %>
+          <tr data-event-id="<%= event.event_id %>">
+            <td><time datetime="<%= event.started_at.iso8601 %>"><%= event.started_at.in_time_zone.strftime("%Y-%m-%d %H:%M:%S %Z") %></time></td>
+            <td><%= @users[event.user_id]&.email || "User ##{event.user_id}" %></td>
+            <td><%= event.application_name.presence || "Client ##{event.application_id}" %></td>
+            <td><strong><%= event.action.titleize %></strong><br><code><%= event.tool_name || event.protocol_method %></code></td>
+            <td><%= event.status == "started" ? "Unfinished" : event.status.titleize %></td>
+            <td><%= event.duration_ms ? "#{event.duration_ms} ms" : "—" %></td>
+            <td><details><summary>View details</summary>
+              <p>Event: <code><%= event.event_id %></code></p>
+              <% if event.request_id.present? %><p>Request: <code><%= event.request_id %></code></p><% end %>
+              <% if event.resource_ids.present? %><p>Targets: <code><%= event.resource_ids.to_json %></code></p><% end %>
+              <% if event.changed_fields.present? %><p>Requested fields: <%= event.changed_fields.join(", ") %></p><% end %>
+              <% if event.error_class.present? %><p>Error type: <code><%= event.error_class %></code></p><% end %>
+            </details></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+  <% if @events.empty? %><p class="solidus-mcp-empty-state">No activity matches these filters.</p><% end %>
+  <nav class="solidus-mcp-pagination" aria-label="Activity pages">
+    <% if @filters["before_id"].present? %><%= link_to "Newest", solidus_admin.mcp_activity_index_path(@filters.except("before_id")) %><% end %>
+    <% if @more %><%= link_to "Older", solidus_admin.mcp_activity_index_path(@filters.merge("before_id" => @events.last.id)) %><% end %>
+  </nav>
+</div>

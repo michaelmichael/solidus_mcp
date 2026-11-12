@@ -10,7 +10,7 @@ module SolidusMcp
         subclass.instance_variable_set(:@declaration, declaration.deep_dup)
       end
 
-      %i[tool_name description category permission read_only].each do |key|
+      %i[tool_name description category permission read_only audit_action].each do |key|
         define_method(key) { |value| declaration[key] = value }
       end
 
@@ -26,18 +26,20 @@ module SolidusMcp
       end
 
       def registration
-        declaration.deep_dup.merge(class_name: name,
+        declaration.deep_dup.merge(class_name: name, audit_action: declaration[:audit_action] || (declaration[:read_only] ? "read" : "update"),
           input_schema: {type: "object", properties: declaration[:properties],
                          required: declaration[:required], additionalProperties: false})
       end
 
       def execute(credential:, **arguments)
         entry = SolidusMcp.registry.tools[registration.fetch(:tool_name).to_s]
-        raise AccessDenied, "Unregistered tool" unless entry && entry.class_name == name
-        policy = Policy.new(credential)
-        policy.authorize!(entry)
-        MCP::Tool::InputSchema.new(entry.input_schema).validate_arguments(arguments)
-        new(credential, policy).send(:call, **arguments)
+        ActionAudit.tool(credential: credential, tool_name: registration.fetch(:tool_name).to_s, arguments: arguments) do
+          raise AccessDenied, "Unregistered tool" unless entry && entry.class_name == name
+          policy = Policy.new(credential)
+          policy.authorize!(entry)
+          MCP::Tool::InputSchema.new(entry.input_schema).validate_arguments(arguments)
+          new(credential, policy).send(:call, **arguments)
+        end
       end
 
       private

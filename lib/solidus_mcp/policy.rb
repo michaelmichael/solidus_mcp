@@ -30,13 +30,13 @@ module SolidusMcp
       true
     end
 
-    def authorize_record!(action, record)
-      raise AccessDenied, "Record is unavailable" unless can?(action, record)
+    def authorize_record!(action, record, attribute: nil)
+      raise AccessDenied, "Record is unavailable" unless can?(action, record, attribute: attribute)
       record
     end
 
-    def can?(action, record)
-      !record.nil? && ability.can?(action, record)
+    def can?(action, record, attribute: nil)
+      !record.nil? && ability.can?(action, record, attribute)
     end
 
     def scope(model, action = :read)

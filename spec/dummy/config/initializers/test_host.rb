@@ -17,7 +17,7 @@ Rails.application.config.to_prepare do
     SolidusAdmin::Config.authentication_method = :authenticate_test_user!
     SolidusAdmin::Config.current_user_method = :current_test_user
     # Exercise the real controller and views without the store-wide admin chrome.
-    [SolidusAdmin::McpConnectionsController, SolidusAdmin::McpAdministratorsController].each do |controller|
+    [SolidusAdmin::McpConnectionsController, SolidusAdmin::McpAdministratorsController, SolidusAdmin::McpActivityController].each do |controller|
       controller.class_eval do
         def set_layout
           false

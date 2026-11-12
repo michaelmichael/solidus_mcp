@@ -8,6 +8,7 @@ module SolidusMcp
       category "Products"
       permission "create_product"
       read_only false
+      audit_action "create"
       ability :create, "Spree::Product"
       input :name, type: "string", minLength: 1, maxLength: 255, required: true
       input :price, type: "number", minimum: 0, required: true
