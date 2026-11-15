@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add `set_variant_option_values` to replace an existing non-master variant's
+  complete option assignment with scoped authorization, atomic validation,
+  duplicate-combination checks and product locking. Return previous/resulting
+  IDs and labels, and expose assignments in `get_product_variants`.
+- Add `create_option_type` and `create_option_value` with dedicated write grants,
+  record authorization, Solidus validation and readable creation results.
+  Creating options remains separate from attaching them to products or variants.
+
 ## 0.2.0.rc3 (2026-11-12)
 
 - Add centralized MCP activity auditing for tool calls and protocol actions,
