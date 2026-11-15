@@ -274,6 +274,9 @@ Check your existing integrations before deploying changes to shared OAuth settin
 | Products | `add_product_option_type` | Attach an existing option type without replacing other associations. |
 | Products | `create_product` | Create a draft product. |
 | Products | `update_product` | Update the name, description, and metadata fields. |
+| Products | `create_option_type` | Create an option type with an internal name and display label. |
+| Products | `create_option_value` | Create a value belonging to an existing option type. |
+| Products | `set_variant_option_values` | Replace a variant’s complete option assignment. |
 | Products | `update_variant` | Update SKU, weight, dimensions, cost price, or inventory tracking. |
 | Pricing | `create_variant_price` | Create a price in an explicit currency/country context. |
 | Pricing | `get_variant_prices` | Read prices with their currency and country context. |
@@ -356,6 +359,65 @@ and access to every changed variant attribute. Changes save atomically under a
 variant lock and preserve Solidus validations. Inventory tracking controls whether
 Solidus tracks availability; it does not adjust stock quantities. Selling prices
 continue to use the pricing tools.
+
+`create_option_type` accepts `name` and `presentation`, for example
+`{"name": "packs", "presentation": "Packs"}`. It returns `option_type_id`,
+`name`, `presentation`, and `created: true`.
+
+`create_option_value` accepts `option_type_id`, `name`, and `presentation`, for
+example `{"option_type_id": 7, "name": "25-pack", "presentation": "25-Pack"}`.
+It returns `option_value_id`, `option_type_id`, `name`, `presentation`,
+`option_type_name`, `option_type_presentation`, and `created: true`.
+
+Both tools require their own dedicated permission and `mcp:write` consent.
+Creation checks Solidus's create ability against the populated record; value
+creation also resolves its parent through the authorized option-type read scope.
+Names and presentations are required strings of up to 255 characters; blank
+labels fail Solidus validation. Solidus 4.7's case-sensitive name uniqueness
+applies globally to types and within each type to values. Duplicate names fail
+through the existing validation error response, including on retries; they do
+not update or return an existing record. Use the list tools to check first.
+Value creation locks the parent type and rechecks authorization before saving,
+serializing calls to this tool for the same type. Type name uniqueness remains
+model-level, and external value writers that bypass the parent lock can race
+validation. Both tools preserve Solidus callbacks and default positioning.
+
+Creation does not attach types to products or values to variants. Use
+`add_product_option_type` and then `set_variant_option_values` for those steps.
+
+`set_variant_option_values` accepts `variant_id` and `option_value_ids`, for example
+`{"variant_id": 42, "option_value_ids": [3, 8, 12]}`. It replaces the full assignment
+on an existing non-master variant, requiring exactly one value for each option
+type already attached to the product. Duplicate IDs, missing types, multiple
+values per type, unattached types and combinations used by another active
+non-master sibling are rejected. Deleted variants follow Solidus's default
+exclusion and do not reserve combinations. An identical assignment succeeds
+with `changed: false`, regardless of input order.
+
+The response contains `variant_id`, `product_id`, `changed`,
+`previous_option_values` and `option_values`. Each assignment contains
+`option_type_id`, `option_type_name`, `option_type_presentation`,
+`option_value_id`, `option_value_name` and `option_value_presentation`.
+`get_product_variants` also includes `option_values` with this representation;
+it fails closed if any assigned value or type is outside the caller's read scope.
+
+Enable the dedicated `set_variant_option_values` permission and `mcp:write`.
+The caller needs product/variant update access (including the variant's
+`option_values` and `option_value_ids` attributes) and read access to all previous
+and resulting option values and their types. Unavailable records use the standard
+error response. Combination conflicts disclose no sibling details.
+
+Replacement uses Solidus's association writer and `save!` inside one transaction,
+preserving model validations and callbacks. The product is locked before the
+variant, matching `add_product_option_type`'s product lock. Concurrent calls to
+this tool for one product serialize. Solidus 4.7.x itself allows incomplete and
+duplicate combinations, so these stricter rules apply only to this tool. Its join
+index prevents repeated variant/value pairs, but there is no database constraint
+for whole combinations. Admin edits, variant creation and other writers that do
+not acquire the same product lock can still race this check. Host callbacks and
+validations remain authoritative and can reject a replacement; failures roll back
+the assignment. Tested against Solidus 4.7.2; the extension supports Solidus
+4.7.x with Rails 7.2 or 8.0.
 
 `list_stock_locations` returns authorized locations, including inactive ones,
 with IDs, names, and `active`, `default`, `fulfillable`, `backorderable_default`,

@@ -30,8 +30,8 @@ module SolidusMcp
 
   BUILTIN_TOOLS = %w[SearchProducts GetProduct GetProductVariants GetVariantPrices
     UpdateProduct UpdateVariantPrice BulkUpdateVariantPrices GetInventoryLevels
-    SearchInventory SearchOrders GetOrder GetOrderStatus CreateProduct ListOptionTypes
-    ListOptionValues ListShippingCategories AddProductOptionType UpdateVariant ListStockLocations AdjustStock ListTaxons
+    SearchInventory SearchOrders GetOrder GetOrderStatus CreateProduct CreateOptionType CreateOptionValue ListOptionTypes
+    ListOptionValues ListShippingCategories AddProductOptionType UpdateVariant SetVariantOptionValues ListStockLocations AdjustStock ListTaxons
     AddProductToTaxon PublishProduct UnpublishProduct CreateVariantPrice
     ListProductImages AttachProductImage ReorderProductImages RemoveProductImage CancelOrder ShipShipment RefundPayment].map { |name| "SolidusMcp::Tools::#{name}" }.freeze
 

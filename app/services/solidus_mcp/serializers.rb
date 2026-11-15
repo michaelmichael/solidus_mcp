@@ -21,6 +21,15 @@ module SolidusMcp
       record.attributes.slice("id", "product_id", "sku", "is_master")
     end
 
+    def option_assignment(values)
+      values.sort_by { |value| [value.option_type_id, value.id] }.map do |value|
+        @policy.authorize_record!(:read, @policy.scope(Spree::OptionValue).find(value.id))
+        type = @policy.authorize_record!(:read, @policy.scope(Spree::OptionType).find(value.option_type_id))
+        {option_type_id: type.id, option_type_name: type.name, option_type_presentation: type.presentation,
+         option_value_id: value.id, option_value_name: value.name, option_value_presentation: value.presentation}
+      end
+    end
+
     def price(record)
       variant(record.variant)
       @policy.authorize_record!(:read, record)
